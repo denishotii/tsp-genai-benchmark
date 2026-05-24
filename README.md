@@ -15,6 +15,22 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## TSPLIB data provenance
+
+The four benchmark instances in `data/tsplib/` (`eil51`, `berlin52`, `ch130`,
+`d198`) were downloaded on 2026-05-24 from the **Rice University softlib
+mirror** of TSPLIB95:
+
+```
+http://softlib.rice.edu/pub/tsplib/tsp/<name>.tsp.gz
+```
+
+The canonical TSPLIB95 distribution is hosted by Reinelt at Heidelberg
+(`comopt.ifi.uni-heidelberg.de/software/TSPLIB95/`), but that host was
+unreachable at download time. Rice's softlib is a long-established academic
+mirror of the same files; content was byte-verified against an independent
+mirror before commit. All four files use `EDGE_WEIGHT_TYPE: EUC_2D`.
+
 ## Project layout
 
 ```
