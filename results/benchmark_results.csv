@@ -1,0 +1,13 @@
+instance,cities,algorithm,length,optimum,gap_pct,time_s
+eil51,51,greedy,511,426,19.95,0.002
+eil51,51,simulated_annealing,439,426,3.05,0.308
+eil51,51,genetic_algorithm,475,426,11.5,1.916
+berlin52,52,greedy,8980,7542,19.07,0.0
+berlin52,52,simulated_annealing,7542,7542,0.0,0.358
+berlin52,52,genetic_algorithm,8375,7542,11.04,1.859
+ch130,130,greedy,7579,6110,24.04,0.0
+ch130,130,simulated_annealing,6445,6110,5.48,0.902
+ch130,130,genetic_algorithm,9933,6110,62.57,3.07
+d198,198,greedy,18240,15780,15.59,0.0
+d198,198,simulated_annealing,16266,15780,3.08,1.389
+d198,198,genetic_algorithm,29926,15780,89.65,4.024
