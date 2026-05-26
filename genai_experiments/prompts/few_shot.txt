@@ -1,0 +1,12 @@
+Below is an example of the style of optimization code we expect, for an
+unrelated problem — minimizing a one-dimensional function by hill climbing:
+
+```python
+{example}
+```
+
+Now, a different task:
+
+{task}
+
+{interface}

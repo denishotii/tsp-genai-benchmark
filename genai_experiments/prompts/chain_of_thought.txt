@@ -1,0 +1,10 @@
+{task}
+
+Think step by step before writing any code:
+  1. Restate the problem and the algorithm's key components.
+  2. Describe the data structures and the main loop you will use.
+  3. Note any edge cases (for example very small instances or ties).
+
+After your reasoning, provide the complete implementation.
+
+{interface}
