@@ -23,5 +23,8 @@ env/
 .vscode/
 *.swp
 
+# Secrets — never commit real API keys
+.env
+
 # Local-only
 *.local

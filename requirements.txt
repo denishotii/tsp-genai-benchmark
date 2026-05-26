@@ -2,3 +2,8 @@ numpy>=1.26
 pandas>=2.1
 matplotlib>=3.8
 pytest>=8.0
+
+# GenAI experiment harness (Phase 3) — not used by the reference algorithms
+openai>=1.50
+anthropic>=0.40
+python-dotenv>=1.0
