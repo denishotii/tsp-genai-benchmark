@@ -28,3 +28,6 @@ env/
 
 # Local-only
 *.local
+
+# paper
+paper/
