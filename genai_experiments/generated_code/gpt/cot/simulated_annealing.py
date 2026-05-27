@@ -1,0 +1,177 @@
+import math
+import numpy as np
+
+
+def solve(dist_matrix):
+    """
+    Simulated Annealing TSP solver using a 2-opt neighborhood.
+
+    Reasoning / design:
+      1. Problem and algorithm:
+         - We need a closed tour visiting every city exactly once.
+         - The objective is to minimize the sum of consecutive tour edges,
+           including the final edge back to the first city.
+         - Simulated Annealing keeps a current tour, proposes neighboring tours,
+           accepts improvements, and sometimes accepts worsening moves with
+           probability exp(-delta / temperature).
+         - The neighborhood is 2-opt: choose indices i < j and reverse
+           tour[i:j+1].
+         - Temperature follows a geometric cooling schedule.
+
+      2. Data structures and main loop:
+         - The tour is stored as a NumPy integer array for efficient indexing.
+         - The best tour found is stored separately.
+         - A 2-opt move's length change is computed in O(1), because only two
+           boundary edges change.
+         - The main loop repeatedly samples valid 2-opt moves, accepts/rejects
+           them, and multiplies the temperature by a constant factor.
+
+      3. Edge cases:
+         - n = 0: return an empty tour with length 0.
+         - n = 1: the only tour has length 0.
+         - n = 2: the closed tour length is d(0,1) + d(1,0).
+         - Full reversal of the whole tour is skipped because it represents the
+           same closed tour and breaks the usual 2-opt delta formula.
+         - Equal-length moves are accepted to allow movement across plateaus.
+    """
+
+    dist = np.asarray(dist_matrix, dtype=float)
+
+    if dist.ndim != 2 or dist.shape[0] != dist.shape[1]:
+        raise ValueError("dist_matrix must be a square NumPy array")
+
+    n = dist.shape[0]
+
+    def tour_length(t):
+        if len(t) == 0:
+            return 0.0
+        return float(dist[t, np.roll(t, -1)].sum())
+
+    if n == 0:
+        return [], 0.0
+
+    if n == 1:
+        return [0], 0.0
+
+    if n == 2:
+        return [0, 1], float(dist[0, 1] + dist[1, 0])
+
+    # Reproducible stochastic search.
+    rng = np.random.default_rng(12345)
+
+    # Deterministic nearest-neighbor initial tour from city 0.
+    unvisited = np.ones(n, dtype=bool)
+    initial = np.empty(n, dtype=int)
+
+    current_city = 0
+    initial[0] = current_city
+    unvisited[current_city] = False
+
+    for pos in range(1, n):
+        row = dist[current_city].copy()
+        row[~unvisited] = np.inf
+        next_city = int(np.argmin(row))
+        initial[pos] = next_city
+        unvisited[next_city] = False
+        current_city = next_city
+
+    tour = initial.copy()
+    current_length = tour_length(tour)
+
+    best_tour = tour.copy()
+    best_length = current_length
+
+    # Estimate an initial temperature from sampled positive 2-opt deltas.
+    positive_deltas = []
+    sample_count = min(5000, max(100, 20 * n))
+
+    for _ in range(sample_count):
+        while True:
+            i = int(rng.integers(0, n - 1))
+            j = int(rng.integers(i + 1, n))
+            if not (i == 0 and j == n - 1):
+                break
+
+        a = tour[i - 1]
+        b = tour[i]
+        c = tour[j]
+        d = tour[(j + 1) % n]
+
+        delta = dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d]
+        if delta > 0.0:
+            positive_deltas.append(float(delta))
+
+    if positive_deltas:
+        # Choose T so that an average worsening move is initially accepted
+        # with probability about 0.8.
+        mean_positive_delta = float(np.mean(positive_deltas))
+        temperature = -mean_positive_delta / math.log(0.8)
+    else:
+        # Scale-aware fallback.
+        temperature = max(current_length / n, 1.0)
+
+    temperature = max(float(temperature), 1e-12)
+
+    # Geometric schedule: T_k = T_0 * alpha^k.
+    iterations = int(min(300_000, max(10_000, 60 * n * n)))
+    final_temperature = temperature * 1e-4
+    alpha = math.exp(math.log(final_temperature / temperature) / iterations)
+
+    # Main simulated annealing loop.
+    for _ in range(iterations):
+        while True:
+            i = int(rng.integers(0, n - 1))
+            j = int(rng.integers(i + 1, n))
+            if not (i == 0 and j == n - 1):
+                break
+
+        a = tour[i - 1]
+        b = tour[i]
+        c = tour[j]
+        d = tour[(j + 1) % n]
+
+        delta = float(dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d])
+
+        if delta <= 0.0 or rng.random() < math.exp(-delta / temperature):
+            tour[i:j + 1] = tour[i:j + 1][::-1].copy()
+            current_length += delta
+
+            if current_length < best_length:
+                best_length = current_length
+                best_tour = tour.copy()
+
+        temperature *= alpha
+
+    # Optional short deterministic 2-opt polish on the best tour found.
+    # This only accepts strict improvements and is capped for speed.
+    tour = best_tour.copy()
+    current_length = tour_length(tour)
+
+    if n <= 500:
+        max_polish_passes = 2
+
+        for _ in range(max_polish_passes):
+            improved = False
+
+            for i in range(n - 1):
+                for j in range(i + 1, n):
+                    if i == 0 and j == n - 1:
+                        continue
+
+                    a = tour[i - 1]
+                    b = tour[i]
+                    c = tour[j]
+                    d = tour[(j + 1) % n]
+
+                    delta = float(dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d])
+
+                    if delta < -1e-12:
+                        tour[i:j + 1] = tour[i:j + 1][::-1].copy()
+                        current_length += delta
+                        improved = True
+
+            if not improved:
+                break
+
+    final_length = tour_length(tour)
+    return tour.tolist(), float(final_length)

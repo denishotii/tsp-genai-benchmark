@@ -1,0 +1,114 @@
+import numpy as np
+import random
+
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n <= 1:
+        return list(range(n)), 0.0
+    if n == 2:
+        return [0, 1], float(dist_matrix[0, 1] + dist_matrix[1, 0])
+
+    # GA parameters
+    pop_size = max(50, min(200, 10 * n))
+    n_generations = max(200, min(2000, 50 * n))
+    tournament_size = 5
+    mutation_rate = 0.2
+    elite_size = max(2, pop_size // 20)
+    crossover_rate = 0.9
+
+    def tour_length(tour):
+        idx = np.asarray(tour)
+        nxt = np.roll(idx, -1)
+        return float(dist_matrix[idx, nxt].sum())
+
+    def nearest_neighbor_tour(start):
+        unvisited = set(range(n))
+        unvisited.remove(start)
+        tour = [start]
+        current = start
+        while unvisited:
+            nxt = min(unvisited, key=lambda c: dist_matrix[current, c])
+            tour.append(nxt)
+            unvisited.remove(nxt)
+            current = nxt
+        return tour
+
+    # Initialize population: some NN, rest random
+    population = []
+    n_nn = min(n, max(1, pop_size // 10))
+    for i in range(n_nn):
+        population.append(nearest_neighbor_tour(i % n))
+    while len(population) < pop_size:
+        t = list(range(n))
+        random.shuffle(t)
+        population.append(t)
+
+    fitnesses = [tour_length(t) for t in population]
+
+    def tournament_select():
+        best = None
+        best_f = float('inf')
+        for _ in range(tournament_size):
+            idx = random.randrange(pop_size)
+            if fitnesses[idx] < best_f:
+                best_f = fitnesses[idx]
+                best = population[idx]
+        return best
+
+    def order_crossover(p1, p2):
+        a, b = sorted(random.sample(range(n), 2))
+        child = [-1] * n
+        child[a:b+1] = p1[a:b+1]
+        in_child = set(p1[a:b+1])
+        pos = (b + 1) % n
+        for i in range(n):
+            src = p2[(b + 1 + i) % n]
+            if src not in in_child:
+                child[pos] = src
+                pos = (pos + 1) % n
+        return child
+
+    def swap_mutate(tour):
+        tour = tour[:]
+        i, j = random.sample(range(n), 2)
+        tour[i], tour[j] = tour[j], tour[i]
+        return tour
+
+    best_tour = min(population, key=tour_length)
+    best_len = tour_length(best_tour)
+
+    no_improve = 0
+    for gen in range(n_generations):
+        # sort by fitness
+        order = sorted(range(pop_size), key=lambda i: fitnesses[i])
+        new_pop = [population[order[i]][:] for i in range(elite_size)]
+
+        while len(new_pop) < pop_size:
+            p1 = tournament_select()
+            if random.random() < crossover_rate:
+                p2 = tournament_select()
+                child = order_crossover(p1, p2)
+            else:
+                child = p1[:]
+            if random.random() < mutation_rate:
+                child = swap_mutate(child)
+            new_pop.append(child)
+
+        population = new_pop
+        fitnesses = [tour_length(t) for t in population]
+
+        cur_best_idx = min(range(pop_size), key=lambda i: fitnesses[i])
+        if fitnesses[cur_best_idx] < best_len - 1e-12:
+            best_len = fitnesses[cur_best_idx]
+            best_tour = population[cur_best_idx][:]
+            no_improve = 0
+        else:
+            no_improve += 1
+
+        if no_improve > 100:
+            break
+
+    return list(best_tour), float(best_len)

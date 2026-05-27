@@ -1,0 +1,101 @@
+import numpy as np
+import random
+import math
+
+
+def tour_length(tour, dist_matrix):
+    idx = np.asarray(tour)
+    return float(dist_matrix[idx, np.roll(idx, -1)].sum())
+
+
+def nearest_neighbor_tour(dist_matrix, start=0):
+    n = dist_matrix.shape[0]
+    visited = [False] * n
+    tour = [start]
+    visited[start] = True
+    current = start
+    for _ in range(n - 1):
+        d = dist_matrix[current].copy()
+        d[visited] = np.inf
+        nxt = int(np.argmin(d))
+        tour.append(nxt)
+        visited[nxt] = True
+        current = nxt
+    return tour
+
+
+def two_opt_delta(tour, i, j, dist_matrix):
+    # Reverse tour[i:j+1]; compute change in length.
+    n = len(tour)
+    a, b = tour[i - 1], tour[i]
+    c, d = tour[j], tour[(j + 1) % n]
+    if a == c or b == d:
+        return 0.0
+    return (dist_matrix[a, c] + dist_matrix[b, d]
+            - dist_matrix[a, b] - dist_matrix[c, d])
+
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n <= 1:
+        return list(range(n)), 0.0
+    if n == 2:
+        return [0, 1], float(dist_matrix[0, 1] + dist_matrix[1, 0])
+
+    # Initial solution: nearest neighbor
+    best_tour = nearest_neighbor_tour(dist_matrix, start=0)
+    best_len = tour_length(best_tour, dist_matrix)
+
+    current_tour = best_tour[:]
+    current_len = best_len
+
+    # Estimate initial temperature from average edge length
+    finite = dist_matrix[dist_matrix > 0]
+    avg_edge = float(finite.mean()) if finite.size > 0 else 1.0
+    T0 = avg_edge
+    T_min = avg_edge * 1e-4
+    if T0 <= 0:
+        T0 = 1.0
+        T_min = 1e-4
+
+    # Iteration budget scales with n
+    iters_per_temp = max(100, 20 * n)
+    num_temps = max(200, 10 * n)
+    alpha = (T_min / T0) ** (1.0 / max(1, num_temps - 1))
+
+    T = T0
+    rng = random.Random(12345)
+
+    for _ in range(num_temps):
+        for _ in range(iters_per_temp):
+            i = rng.randint(1, n - 2)
+            j = rng.randint(i, n - 1)
+            if i == j:
+                continue
+            delta = two_opt_delta(current_tour, i, j, dist_matrix)
+            if delta < 0 or rng.random() < math.exp(-delta / T):
+                current_tour[i:j + 1] = current_tour[i:j + 1][::-1]
+                current_len += delta
+                if current_len < best_len:
+                    best_len = current_len
+                    best_tour = current_tour[:]
+        T *= alpha
+        if T < T_min:
+            T = T_min
+
+    # Final 2-opt local search polish
+    improved = True
+    while improved:
+        improved = False
+        for i in range(1, n - 1):
+            for j in range(i + 1, n):
+                delta = two_opt_delta(best_tour, i, j, dist_matrix)
+                if delta < -1e-12:
+                    best_tour[i:j + 1] = best_tour[i:j + 1][::-1]
+                    best_len += delta
+                    improved = True
+
+    best_len = tour_length(best_tour, dist_matrix)
+    return best_tour, float(best_len)

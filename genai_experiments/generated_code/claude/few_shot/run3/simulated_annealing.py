@@ -1,0 +1,141 @@
+import numpy as np
+import random
+import math
+
+
+def tour_length(tour, dist_matrix):
+    """Compute closed tour length."""
+    idx = np.asarray(tour)
+    return float(dist_matrix[idx, np.roll(idx, -1)].sum())
+
+
+def solve(dist_matrix):
+    """Simulated Annealing for TSP with 2-opt neighborhood."""
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n <= 1:
+        return list(range(n)), 0.0
+    if n == 2:
+        return [0, 1], float(dist_matrix[0, 1] + dist_matrix[1, 0])
+
+    # Initial tour: nearest neighbor heuristic for a decent starting point
+    def nearest_neighbor_tour(start=0):
+        unvisited = set(range(n))
+        unvisited.remove(start)
+        tour = [start]
+        current = start
+        while unvisited:
+            nxt = min(unvisited, key=lambda j: dist_matrix[current, j])
+            tour.append(nxt)
+            unvisited.remove(nxt)
+            current = nxt
+        return tour
+
+    current_tour = nearest_neighbor_tour(0)
+    current_len = tour_length(current_tour, dist_matrix)
+
+    best_tour = list(current_tour)
+    best_len = current_len
+
+    # Estimate initial temperature from average edge distance
+    # so that moderate-cost moves have reasonable acceptance probability.
+    mask = ~np.eye(n, dtype=bool)
+    avg_edge = float(dist_matrix[mask].mean()) if n > 1 else 1.0
+    T0 = max(avg_edge, 1e-9)
+    T_min = T0 * 1e-6
+
+    # Number of iterations scales with problem size
+    iterations_per_temp = max(100, n * n)
+    # Cooling rate chosen so we get a good number of temperature steps
+    alpha = 0.995
+
+    T = T0
+
+    # Cap total work to keep runtime reasonable
+    max_total_iters = 200_000 + 2000 * n
+    total_iters = 0
+
+    rng = random.Random(0xC0FFEE)
+
+    while T > T_min and total_iters < max_total_iters:
+        improved_this_temp = False
+        for _ in range(iterations_per_temp):
+            total_iters += 1
+
+            # Pick two distinct indices i < j for 2-opt reversal
+            i = rng.randint(0, n - 1)
+            j = rng.randint(0, n - 1)
+            if i == j:
+                continue
+            if i > j:
+                i, j = j, i
+            # Avoid trivial reversal that is equivalent to no change
+            if j - i + 1 >= n:
+                continue
+
+            # Compute delta for reversing segment current_tour[i..j]
+            # Edges removed: (tour[i-1], tour[i]) and (tour[j], tour[j+1])
+            # Edges added:   (tour[i-1], tour[j]) and (tour[i], tour[j+1])
+            a = current_tour[i - 1]  # works for i==0 via Python negative index
+            b = current_tour[i]
+            c = current_tour[j]
+            d = current_tour[(j + 1) % n]
+
+            # If the segment spans the entire tour (shouldn't, given checks),
+            # the change would be zero; guard anyway.
+            if i == 0 and j == n - 1:
+                continue
+
+            delta = (dist_matrix[a, c] + dist_matrix[b, d]
+                     - dist_matrix[a, b] - dist_matrix[c, d])
+
+            if delta < 0:
+                accept = True
+            else:
+                # Avoid overflow in exp
+                try:
+                    accept = rng.random() < math.exp(-delta / T)
+                except OverflowError:
+                    accept = False
+
+            if accept:
+                current_tour[i:j + 1] = current_tour[i:j + 1][::-1]
+                current_len += delta
+                if current_len < best_len - 1e-12:
+                    best_len = current_len
+                    best_tour = list(current_tour)
+                    improved_this_temp = True
+
+        T *= alpha
+        # If long stagnation, occasionally restart from best
+        if not improved_this_temp and T < T0 * 1e-3:
+            current_tour = list(best_tour)
+            current_len = best_len
+
+    # Final cleanup: greedy 2-opt to polish
+    improved = True
+    polish_passes = 0
+    max_polish_passes = 4
+    while improved and polish_passes < max_polish_passes:
+        improved = False
+        polish_passes += 1
+        for i in range(n - 1):
+            a = best_tour[i - 1]
+            b = best_tour[i]
+            for j in range(i + 1, n):
+                c = best_tour[j]
+                d = best_tour[(j + 1) % n]
+                if i == 0 and j == n - 1:
+                    continue
+                delta = (dist_matrix[a, c] + dist_matrix[b, d]
+                         - dist_matrix[a, b] - dist_matrix[c, d])
+                if delta < -1e-12:
+                    best_tour[i:j + 1] = best_tour[i:j + 1][::-1]
+                    best_len += delta
+                    improved = True
+                    b = best_tour[i]  # refresh after reversal
+
+    # Recompute length cleanly to avoid floating drift
+    best_len = tour_length(best_tour, dist_matrix)
+    return best_tour, best_len

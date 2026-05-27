@@ -1,0 +1,268 @@
+```python
+"""
+Step-by-step reasoning:
+
+1. Problem restatement and key algorithm components
+   We need to return a closed TSP tour over cities 0..n-1 and its total length.
+   This implementation uses Simulated Annealing:
+     - State: a permutation/tour of the cities.
+     - Neighborhood: 2-opt moves, i.e. reverse a contiguous segment of the tour.
+     - Cost: closed-tour length.
+     - Acceptance rule: always accept improving/equal moves; accept worsening moves
+       with probability exp(-delta / temperature).
+     - Cooling: geometric schedule T <- alpha * T.
+
+2. Data structures and main loop
+   - The tour is stored as a Python list of city indices.
+   - City 0 is fixed at position 0 to remove rotational symmetry; 2-opt moves are
+     applied only to positions 1..n-1. This still allows all closed tours up to
+     rotation.
+   - A nearest-neighbor tour is used as the initial solution.
+   - A 2-opt delta is computed in O(1):
+       remove edges (a,b), (c,d), add edges (a,c), (b,d)
+     where segment [i..j] is reversed.
+   - The main annealing loop repeatedly samples a random valid 2-opt move,
+     decides whether to accept it, updates the temperature geometrically, and
+     remembers the best tour seen.
+   - A small bounded 2-opt improvement pass is applied at the end to polish the
+     best annealing result.
+
+3. Edge cases
+   - n == 0: return empty tour and length 0.0.
+   - n == 1: return [0] and length 0.0.
+   - n == 2: only one meaningful tour exists.
+   - Equal-cost moves are accepted to allow movement across plateaus/ties.
+"""
+
+import math
+import numpy as np
+
+
+def solve(dist_matrix):
+    """
+    Simulated Annealing TSP solver using 2-opt moves and geometric cooling.
+
+    Parameters
+    ----------
+    dist_matrix : np.ndarray
+        Symmetric n x n distance matrix with zero diagonal.
+
+    Returns
+    -------
+    tour : list[int]
+        Visiting order containing each city exactly once.
+    length : float
+        Closed-tour length.
+    """
+    D = np.asarray(dist_matrix, dtype=float)
+
+    if D.ndim != 2 or D.shape[0] != D.shape[1]:
+        raise ValueError("dist_matrix must be a square 2D array")
+
+    n = D.shape[0]
+
+    if n == 0:
+        return [], 0.0
+
+    if n == 1:
+        return [0], float(D[0, 0])
+
+    if n == 2:
+        tour = [0, 1]
+        length = float(D[0, 1] + D[1, 0])
+        return tour, length
+
+    rng = np.random.default_rng(0)
+
+    tour = _nearest_neighbor_tour(D)
+    current_length = _tour_length(D, tour)
+
+    best_tour = tour.copy()
+    best_length = current_length
+
+    # Estimate a useful initial temperature from sampled uphill 2-opt moves.
+    initial_temperature = _estimate_initial_temperature(D, tour, current_length, rng)
+
+    # Iteration budget chosen to be moderate and scalable.
+    # Small/medium instances get more relative effort; large instances are capped.
+    total_iterations = int(
+        min(
+            300_000,
+            max(
+                10_000,
+                800 * n,
+                30 * n * n if n <= 100 else 0,
+            ),
+        )
+    )
+
+    final_temperature = max(initial_temperature * 1.0e-4, 1.0e-12)
+    alpha = (final_temperature / initial_temperature) ** (1.0 / max(1, total_iterations))
+
+    temperature = initial_temperature
+
+    for _ in range(total_iterations):
+        i, j = _random_two_opt_indices(n, rng)
+
+        delta = _two_opt_delta(D, tour, i, j)
+
+        accept = False
+        if delta <= 0.0:
+            accept = True
+        else:
+            # Avoid unnecessary exp calls when probability is effectively zero.
+            ratio = delta / temperature
+            if ratio < 700.0 and rng.random() < math.exp(-ratio):
+                accept = True
+
+        if accept:
+            tour[i : j + 1] = reversed(tour[i : j + 1])
+            current_length += delta
+
+            if current_length < best_length:
+                best_length = current_length
+                best_tour = tour.copy()
+
+        temperature *= alpha
+
+    # Bounded final polish using deterministic first-improvement 2-opt.
+    best_tour, best_length = _bounded_two_opt_polish(D, best_tour, best_length)
+
+    # Recompute exactly to remove any accumulated floating point delta drift.
+    best_length = _tour_length(D, best_tour)
+
+    return best_tour, float(best_length)
+
+
+def _nearest_neighbor_tour(D):
+    n = D.shape[0]
+    unvisited = np.ones(n, dtype=bool)
+    unvisited[0] = False
+
+    tour = [0]
+    current = 0
+
+    for _ in range(n - 1):
+        candidates = np.flatnonzero(unvisited)
+        next_city = int(candidates[np.argmin(D[current, candidates])])
+        tour.append(next_city)
+        unvisited[next_city] = False
+        current = next_city
+
+    return tour
+
+
+def _tour_length(D, tour):
+    if not tour:
+        return 0.0
+
+    idx = np.asarray(tour, dtype=np.int64)
+    return float(D[idx, np.roll(idx, -1)].sum())
+
+
+def _two_opt_delta(D, tour, i, j):
+    """
+    Cost difference for reversing tour[i:j+1].
+
+    Assumes:
+      - 1 <= i < j <= n-1
+      - city 0 is fixed at position 0
+      - symmetric distances
+    """
+    n = len(tour)
+
+    a = tour[i - 1]
+    b = tour[i]
+    c = tour[j]
+    d = tour[(j + 1) % n]
+
+    old_cost = D[a, b] + D[c, d]
+    new_cost = D[a, c] + D[b, d]
+
+    return float(new_cost - old_cost)
+
+
+def _random_two_opt_indices(n, rng):
+    """
+    Sample two distinct positions from 1..n-1 and return them sorted.
+    City 0 is kept fixed at position 0.
+    """
+    i = int(rng.integers(1, n))
+
+    # Pick j uniformly from 1..n-1 excluding i.
+    j = int(rng.integers(1, n - 1))
+    if j >= i:
+        j += 1
+
+    if i > j:
+        i, j = j, i
+
+    return i, j
+
+
+def _estimate_initial_temperature(D, tour, current_length, rng):
+    n = len(tour)
+    samples = min(1000, max(50, 10 * n))
+
+    uphill_deltas = []
+
+    for _ in range(samples):
+        i, j = _random_two_opt_indices(n, rng)
+        delta = _two_opt_delta(D, tour, i, j)
+        if delta > 1.0e-12:
+            uphill_deltas.append(delta)
+
+    if uphill_deltas:
+        mean_uphill = float(np.mean(uphill_deltas))
+        # Temperature giving roughly 80% acceptance for an average uphill move.
+        temperature = -mean_uphill / math.log(0.80)
+    else:
+        # Fallback for flat or already locally strong starts.
+        temperature = max(abs(current_length) * 0.01, 1.0)
+
+    return max(float(temperature), 1.0e-12)
+
+
+def _bounded_two_opt_polish(D, tour, length):
+    """
+    Small deterministic first-improvement 2-opt cleanup.
+
+    This is intentionally bounded so the solver remains primarily simulated
+    annealing and does not spend unbounded time in local search.
+    """
+    n = len(tour)
+
+    max_passes = 2
+    max_checks = 200_000
+
+    checks = 0
+    passes = 0
+    improved = True
+
+    while improved and passes < max_passes and checks < max_checks:
+        improved = False
+        passes += 1
+
+        for i in range(1, n - 1):
+            if checks >= max_checks:
+                break
+
+            for j in range(i + 1, n):
+                checks += 1
+
+                delta = _two_opt_delta(D, tour, i, j)
+
+                if delta < -1.0e-12:
+                    tour[i : j + 1] = reversed(tour[i : j + 1])
+                    length += delta
+                    improved = True
+                    break
+
+                if checks >= max_checks:
+                    break
+
+            if improved:
+                break
+
+    return tour, float(length)
+```

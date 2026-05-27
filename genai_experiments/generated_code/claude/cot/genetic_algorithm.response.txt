@@ -1,0 +1,155 @@
+## Reasoning
+
+**Problem**: Find a short closed tour visiting each of n cities exactly once, given an n×n distance matrix.
+
+**Algorithm Components**:
+1. **Permutation encoding**: Each individual is a list/array of city indices (a permutation of 0..n-1).
+2. **Tournament selection**: Pick k random individuals, return the best.
+3. **Order Crossover (OX)**: Copy a slice from parent1, fill remaining positions with cities from parent2 in their order, skipping already-included ones.
+4. **Swap mutation**: With some probability, swap two random positions.
+5. **Elitism**: Carry the best E individuals unchanged to the next generation.
+
+**Data structures**:
+- Population: list of numpy arrays (permutations).
+- Fitness: array of tour lengths (lower is better).
+
+**Main loop**:
+- Initialize random population (plus maybe a greedy seed).
+- For each generation: evaluate, sort, keep elites, fill rest by tournament selection + OX + swap mutation.
+- Return best ever.
+
+**Edge cases**:
+- n=1: return [0], length 0.
+- n=2: only one tour up to rotation/reflection.
+- Avoid mutation on tiny instances breaking things (swap of same index ok).
+- Ensure crossover handles slice indices safely.
+
+```python
+import numpy as np
+import random
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+    
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        return [0, 1], float(dist_matrix[0, 1] + dist_matrix[1, 0])
+    
+    def tour_length(tour):
+        idx = np.asarray(tour)
+        nxt = np.roll(idx, -1)
+        return float(dist_matrix[idx, nxt].sum())
+    
+    def greedy_tour(start):
+        visited = [start]
+        unvisited = set(range(n))
+        unvisited.remove(start)
+        cur = start
+        while unvisited:
+            nxt = min(unvisited, key=lambda c: dist_matrix[cur, c])
+            visited.append(nxt)
+            unvisited.remove(nxt)
+            cur = nxt
+        return visited
+    
+    # GA parameters
+    pop_size = max(50, min(200, 10 * n))
+    elite_size = max(2, pop_size // 20)
+    tournament_k = 5
+    mutation_rate = 0.2
+    crossover_rate = 0.9
+    
+    # Generation budget scaled with n
+    max_generations = max(100, min(1500, 60 * n))
+    stagnation_limit = max(50, max_generations // 4)
+    
+    # Initialize population
+    population = []
+    # Seed with a few greedy tours
+    num_greedy = min(n, max(1, pop_size // 10))
+    greedy_starts = random.sample(range(n), num_greedy)
+    for s in greedy_starts:
+        population.append(greedy_tour(s))
+    # Fill the rest with random permutations
+    while len(population) < pop_size:
+        perm = list(range(n))
+        random.shuffle(perm)
+        population.append(perm)
+    
+    def evaluate(pop):
+        return np.array([tour_length(ind) for ind in pop])
+    
+    def tournament_select(pop, fitness):
+        contenders = random.sample(range(len(pop)), tournament_k)
+        best = min(contenders, key=lambda i: fitness[i])
+        return pop[best]
+    
+    def order_crossover(p1, p2):
+        a, b = sorted(random.sample(range(n), 2))
+        child = [-1] * n
+        # Copy segment from p1
+        segment = set(p1[a:b+1])
+        child[a:b+1] = p1[a:b+1]
+        # Fill remaining from p2 in order, starting after b
+        fill_pos = (b + 1) % n
+        p2_pos = (b + 1) % n
+        while -1 in child:
+            city = p2[p2_pos]
+            if city not in segment:
+                child[fill_pos] = city
+                fill_pos = (fill_pos + 1) % n
+            p2_pos = (p2_pos + 1) % n
+        return child
+    
+    def swap_mutate(ind):
+        i, j = random.sample(range(n), 2)
+        ind[i], ind[j] = ind[j], ind[i]
+        return ind
+    
+    fitness = evaluate(population)
+    best_idx = int(np.argmin(fitness))
+    best_tour = list(population[best_idx])
+    best_length = float(fitness[best_idx])
+    stagnation = 0
+    
+    for gen in range(max_generations):
+        # Sort population by fitness
+        order = np.argsort(fitness)
+        population = [population[i] for i in order]
+        fitness = fitness[order]
+        
+        # Elitism
+        new_pop = [list(ind) for ind in population[:elite_size]]
+        
+        # Generate offspring
+        while len(new_pop) < pop_size:
+            parent1 = tournament_select(population, fitness)
+            parent2 = tournament_select(population, fitness)
+            if random.random() < crossover_rate:
+                child = order_crossover(parent1, parent2)
+            else:
+                child = list(parent1)
+            if random.random() < mutation_rate:
+                child = swap_mutate(child)
+            new_pop.append(child)
+        
+        population = new_pop
+        fitness = evaluate(population)
+        
+        current_best_idx = int(np.argmin(fitness))
+        current_best_length = float(fitness[current_best_idx])
+        if current_best_length < best_length - 1e-12:
+            best_length = current_best_length
+            best_tour = list(population[current_best_idx])
+            stagnation = 0
+        else:
+            stagnation += 1
+            if stagnation >= stagnation_limit:
+                break
+    
+    return best_tour, best_length
+```

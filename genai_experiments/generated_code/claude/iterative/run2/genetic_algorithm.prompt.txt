@@ -1,0 +1,21 @@
+=== round 1 prompt ===
+Implement a Genetic Algorithm for the Traveling Salesman Problem (TSP). Use a permutation encoding, tournament selection, Order Crossover (OX), swap mutation, and elitism.
+
+Your solution must define exactly this entry point:
+
+    def solve(dist_matrix):
+        ...
+        return tour, length
+
+where:
+  - dist_matrix is an (n x n) symmetric NumPy array of pairwise distances
+    (n = number of cities); dist_matrix[i][j] is the distance from city i to
+    city j, and the diagonal is zero.
+  - tour is a list containing each city index 0..n-1 exactly once, giving the
+    visiting order of a single closed tour.
+  - length is that closed tour's total length as a float: the sum of distances
+    between consecutive cities plus the edge from the last city back to the
+    first.
+
+Provide your solution as a single Python code block. Use only NumPy and the
+Python standard library (no external optimization libraries).

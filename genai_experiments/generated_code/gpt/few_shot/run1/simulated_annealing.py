@@ -1,0 +1,142 @@
+import math
+import numpy as np
+
+
+def _tour_length(tour, dist):
+    """Return the closed-tour length for a NumPy array tour."""
+    if len(tour) == 0:
+        return 0.0
+    return float(np.sum(dist[tour, np.roll(tour, -1)]))
+
+
+def _nearest_neighbor_tour(dist):
+    """Build a simple nearest-neighbor initial tour."""
+    n = dist.shape[0]
+    tour = np.empty(n, dtype=int)
+    unvisited = np.ones(n, dtype=bool)
+
+    current = 0
+    for pos in range(n):
+        tour[pos] = current
+        unvisited[current] = False
+
+        if pos == n - 1:
+            break
+
+        d = dist[current].copy()
+        d[~unvisited] = np.inf
+        current = int(np.argmin(d))
+
+    return tour
+
+
+def solve(dist_matrix):
+    """
+    Simulated Annealing solver for the symmetric Traveling Salesman Problem.
+
+    Uses:
+      - 2-opt moves: reverse a segment of the tour
+      - geometric cooling: T <- alpha * T
+    """
+    dist = np.asarray(dist_matrix, dtype=float)
+    n = dist.shape[0]
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        tour = [0, 1]
+        length = float(dist[0, 1] + dist[1, 0])
+        return tour, length
+
+    rng = np.random.default_rng(12345)
+
+    # Initial solution.
+    tour = _nearest_neighbor_tour(dist)
+    current_length = _tour_length(tour, dist)
+
+    best_tour = tour.copy()
+    best_length = current_length
+
+    # Estimate a reasonable initial temperature from sampled uphill 2-opt moves.
+    positive_deltas = []
+    samples = max(100, min(2000, 20 * n))
+
+    for _ in range(samples):
+        i = int(rng.integers(0, n - 1))
+        k = int(rng.integers(i + 1, n))
+
+        # Reversing the entire tour is the same closed tour.
+        if i == 0 and k == n - 1:
+            continue
+
+        a = tour[i - 1]
+        b = tour[i]
+        c = tour[k]
+        d = tour[(k + 1) % n]
+
+        delta = dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d]
+        if delta > 0:
+            positive_deltas.append(float(delta))
+
+    if positive_deltas:
+        # Temperature where an average uphill move has acceptance probability ~0.8.
+        temperature = -float(np.mean(positive_deltas)) / math.log(0.8)
+    else:
+        nonzero = dist[dist > 0]
+        temperature = float(np.mean(nonzero)) if nonzero.size else 1.0
+
+    temperature = max(temperature, 1e-12)
+
+    # Geometric cooling parameters.
+    alpha = 0.99
+    min_temperature = temperature * 1e-4
+
+    moves_per_temperature = max(50, min(2000, 10 * n))
+    max_moves = max(50000, min(1000000, 100 * n * n))
+
+    moves_done = 0
+
+    while temperature > min_temperature and moves_done < max_moves:
+        for _ in range(moves_per_temperature):
+            if moves_done >= max_moves:
+                break
+
+            i = int(rng.integers(0, n - 1))
+            k = int(rng.integers(i + 1, n))
+
+            if i == 0 and k == n - 1:
+                continue
+
+            # 2-opt delta:
+            # remove edges (a,b), (c,d)
+            # add edges    (a,c), (b,d)
+            a = tour[i - 1]
+            b = tour[i]
+            c = tour[k]
+            d = tour[(k + 1) % n]
+
+            delta = dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d]
+
+            accept = False
+            if delta <= 0:
+                accept = True
+            else:
+                accept = rng.random() < math.exp(-float(delta) / temperature)
+
+            if accept:
+                tour[i:k + 1] = tour[i:k + 1][::-1].copy()
+                current_length += float(delta)
+
+                if current_length < best_length:
+                    best_length = current_length
+                    best_tour = tour.copy()
+
+            moves_done += 1
+
+        temperature *= alpha
+
+    # Recompute exactly to avoid accumulated floating-point drift.
+    best_length = _tour_length(best_tour, dist)
+    return [int(city) for city in best_tour], float(best_length)

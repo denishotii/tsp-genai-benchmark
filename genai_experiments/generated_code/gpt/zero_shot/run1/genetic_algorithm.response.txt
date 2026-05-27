@@ -1,0 +1,213 @@
+```python
+import numpy as np
+
+
+def _tour_lengths(population, dist_matrix):
+    return dist_matrix[population, np.roll(population, -1, axis=1)].sum(axis=1)
+
+
+def _tour_length(tour, dist_matrix):
+    tour = np.asarray(tour, dtype=np.int64)
+    return float(dist_matrix[tour, np.roll(tour, -1)].sum())
+
+
+def _nearest_neighbor_tour(start, dist_matrix):
+    n = dist_matrix.shape[0]
+    tour = np.empty(n, dtype=np.int64)
+    unvisited = np.ones(n, dtype=bool)
+
+    current = start
+    for i in range(n):
+        tour[i] = current
+        unvisited[current] = False
+        if i < n - 1:
+            candidates = np.flatnonzero(unvisited)
+            current = candidates[np.argmin(dist_matrix[current, candidates])]
+
+    return tour
+
+
+def _tournament_select(fitness, rng, k=3):
+    candidates = rng.integers(0, len(fitness), size=k)
+    return candidates[np.argmin(fitness[candidates])]
+
+
+def _order_crossover(parent1, parent2, rng):
+    n = len(parent1)
+    child = np.full(n, -1, dtype=np.int64)
+
+    a = int(rng.integers(0, n))
+    b = int(rng.integers(0, n))
+    if a > b:
+        a, b = b, a
+
+    child[a:b + 1] = parent1[a:b + 1]
+
+    used = np.zeros(n, dtype=bool)
+    used[parent1[a:b + 1]] = True
+
+    pos = (b + 1) % n
+    for i in range(n):
+        gene = parent2[(b + 1 + i) % n]
+        if not used[gene]:
+            child[pos] = gene
+            pos = (pos + 1) % n
+
+    return child
+
+
+def _swap_mutation(tour, rng, mutation_rate):
+    n = len(tour)
+    if n > 1 and rng.random() < mutation_rate:
+        i, j = rng.integers(0, n, size=2)
+        while j == i:
+            j = int(rng.integers(0, n))
+        tour[i], tour[j] = tour[j], tour[i]
+
+
+def _two_opt(tour, dist_matrix, max_passes=3):
+    n = len(tour)
+    if n < 4:
+        return tour
+
+    tour = tour.copy()
+    length = _tour_length(tour, dist_matrix)
+
+    for _ in range(max_passes):
+        improved = False
+
+        for i in range(n - 1):
+            a = tour[i]
+            b = tour[(i + 1) % n]
+
+            for k in range(i + 2, n):
+                if i == 0 and k == n - 1:
+                    continue
+
+                c = tour[k]
+                d = tour[(k + 1) % n]
+
+                delta = (
+                    dist_matrix[a, c]
+                    + dist_matrix[b, d]
+                    - dist_matrix[a, b]
+                    - dist_matrix[c, d]
+                )
+
+                if delta < -1e-12:
+                    tour[i + 1:k + 1] = tour[i + 1:k + 1][::-1]
+                    length += delta
+                    improved = True
+                    break
+
+            if improved:
+                break
+
+        if not improved:
+            break
+
+    return tour
+
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        tour = [0, 1]
+        return tour, float(dist_matrix[0, 1] + dist_matrix[1, 0])
+
+    rng = np.random.default_rng(42)
+
+    if n <= 50:
+        pop_size = 120
+        generations = 700
+    elif n <= 150:
+        pop_size = 180
+        generations = 500
+    elif n <= 500:
+        pop_size = 220
+        generations = 300
+    else:
+        pop_size = 160
+        generations = 180
+
+    elite_count = max(1, pop_size // 20)
+    tournament_size = 3
+    base_mutation_rate = 0.20
+    patience = max(80, generations // 3)
+
+    population = np.empty((pop_size, n), dtype=np.int64)
+
+    nn_count = min(10, n, pop_size)
+    starts = rng.choice(n, size=nn_count, replace=False)
+    for i, start in enumerate(starts):
+        population[i] = _nearest_neighbor_tour(int(start), dist_matrix)
+
+    for i in range(nn_count, pop_size):
+        population[i] = rng.permutation(n)
+
+    fitness = _tour_lengths(population, dist_matrix)
+
+    best_idx = int(np.argmin(fitness))
+    best_tour = population[best_idx].copy()
+    best_length = float(fitness[best_idx])
+    no_improve = 0
+
+    for _ in range(generations):
+        order = np.argsort(fitness)
+
+        new_population = np.empty_like(population)
+        new_population[:elite_count] = population[order[:elite_count]]
+
+        mutation_rate = base_mutation_rate if no_improve < patience // 2 else 0.35
+
+        pos = elite_count
+        while pos < pop_size:
+            p1_idx = _tournament_select(fitness, rng, tournament_size)
+            p2_idx = _tournament_select(fitness, rng, tournament_size)
+
+            parent1 = population[p1_idx]
+            parent2 = population[p2_idx]
+
+            child1 = _order_crossover(parent1, parent2, rng)
+            _swap_mutation(child1, rng, mutation_rate)
+            new_population[pos] = child1
+            pos += 1
+
+            if pos < pop_size:
+                child2 = _order_crossover(parent2, parent1, rng)
+                _swap_mutation(child2, rng, mutation_rate)
+                new_population[pos] = child2
+                pos += 1
+
+        population = new_population
+        fitness = _tour_lengths(population, dist_matrix)
+
+        gen_best_idx = int(np.argmin(fitness))
+        gen_best_length = float(fitness[gen_best_idx])
+
+        if gen_best_length < best_length:
+            best_length = gen_best_length
+            best_tour = population[gen_best_idx].copy()
+            no_improve = 0
+        else:
+            no_improve += 1
+
+        if no_improve >= patience:
+            break
+
+    if n <= 250:
+        passes = 5 if n <= 80 else 3
+        best_tour = _two_opt(best_tour, dist_matrix, max_passes=passes)
+        best_length = _tour_length(best_tour, dist_matrix)
+
+    tour = [int(x) for x in best_tour]
+    length = float(best_length)
+
+    return tour, length
+```

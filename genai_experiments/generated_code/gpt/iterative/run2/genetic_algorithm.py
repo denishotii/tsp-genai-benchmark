@@ -1,0 +1,194 @@
+import numpy as np
+
+
+def solve(dist_matrix):
+    dist = np.asarray(dist_matrix, dtype=float)
+    n = dist.shape[0]
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        return [0, 1], float(dist[0, 1] + dist[1, 0])
+
+    rng = np.random.default_rng(123456789)
+
+    def tour_length(tour):
+        tour = np.asarray(tour, dtype=np.int64)
+        return float(dist[tour, np.roll(tour, -1)].sum())
+
+    def population_lengths(pop):
+        return dist[pop, np.roll(pop, -1, axis=1)].sum(axis=1)
+
+    def nearest_neighbor_tour(start):
+        tour = np.empty(n, dtype=np.int64)
+        unvisited = np.ones(n, dtype=bool)
+        current = int(start)
+
+        for k in range(n):
+            tour[k] = current
+            unvisited[current] = False
+            if k == n - 1:
+                break
+
+            row = dist[current].copy()
+            row[~unvisited] = np.inf
+            current = int(np.argmin(row))
+
+        return tour
+
+    def order_crossover(parent1, parent2):
+        child = np.full(n, -1, dtype=np.int64)
+
+        a, b = rng.choice(n, size=2, replace=False)
+        if a > b:
+            a, b = b, a
+
+        child[a:b + 1] = parent1[a:b + 1]
+
+        used = np.zeros(n, dtype=bool)
+        used[child[a:b + 1]] = True
+
+        pos = (b + 1) % n
+        for offset in range(n):
+            gene = parent2[(b + 1 + offset) % n]
+            if not used[gene]:
+                child[pos] = gene
+                used[gene] = True
+                pos = (pos + 1) % n
+
+        return child
+
+    def swap_mutation(tour):
+        i, j = rng.choice(n, size=2, replace=False)
+        tour[i], tour[j] = tour[j], tour[i]
+
+    def two_opt(tour):
+        tour = np.asarray(tour, dtype=np.int64).copy()
+
+        if n <= 100:
+            max_passes = 25
+        elif n <= 300:
+            max_passes = 10
+        elif n <= 800:
+            max_passes = 4
+        else:
+            max_passes = 2
+
+        for _ in range(max_passes):
+            improved = False
+
+            for i in range(n - 1):
+                a = tour[i]
+                b = tour[(i + 1) % n]
+
+                js = np.arange(i + 2, n, dtype=np.int64)
+                if js.size == 0:
+                    continue
+
+                if i == 0:
+                    js = js[js != n - 1]
+                    if js.size == 0:
+                        continue
+
+                c = tour[js]
+                d = tour[(js + 1) % n]
+
+                delta = dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d]
+                best_pos = int(np.argmin(delta))
+                best_delta = float(delta[best_pos])
+
+                if best_delta < -1e-12:
+                    j = int(js[best_pos])
+                    tour[i + 1:j + 1] = tour[i + 1:j + 1][::-1].copy()
+                    improved = True
+
+            if not improved:
+                break
+
+        return tour
+
+    pop_size = min(220, max(60, 3 * n))
+    eval_budget = min(70000, max(12000, 8_000_000 // n))
+    generations = min(700, max(60, eval_budget // pop_size))
+
+    elite_count = max(1, pop_size // 20)
+    tournament_size = 3
+    crossover_rate = 0.90
+    base_mutation_rate = 0.20
+
+    population = np.empty((pop_size, n), dtype=np.int64)
+
+    nn_count = min(n, max(1, pop_size // 10), 20 if n <= 1000 else 5)
+    starts = rng.choice(n, size=nn_count, replace=False)
+
+    idx = 0
+    for s in starts:
+        population[idx] = nearest_neighbor_tour(int(s))
+        idx += 1
+
+    while idx < pop_size:
+        population[idx] = rng.permutation(n)
+        idx += 1
+
+    lengths = population_lengths(population)
+    best_idx = int(np.argmin(lengths))
+    best_tour = population[best_idx].copy()
+    best_length = float(lengths[best_idx])
+    stagnant = 0
+
+    for _ in range(generations):
+        lengths = population_lengths(population)
+
+        current_best_idx = int(np.argmin(lengths))
+        current_best_length = float(lengths[current_best_idx])
+
+        if current_best_length < best_length:
+            best_length = current_best_length
+            best_tour = population[current_best_idx].copy()
+            stagnant = 0
+        else:
+            stagnant += 1
+
+        elite_idx = np.argpartition(lengths, elite_count - 1)[:elite_count]
+        elite_idx = elite_idx[np.argsort(lengths[elite_idx])]
+
+        next_population = np.empty_like(population)
+        next_population[:elite_count] = population[elite_idx]
+
+        mutation_rate = base_mutation_rate
+        if stagnant > 50:
+            mutation_rate = min(0.60, mutation_rate * 2.0)
+
+        def tournament_select():
+            candidates = rng.integers(0, pop_size, size=tournament_size)
+            winner = candidates[int(np.argmin(lengths[candidates]))]
+            return population[winner]
+
+        for p in range(elite_count, pop_size):
+            parent1 = tournament_select()
+
+            if rng.random() < crossover_rate:
+                parent2 = tournament_select()
+                child = order_crossover(parent1, parent2)
+            else:
+                child = parent1.copy()
+
+            if rng.random() < mutation_rate:
+                swap_mutation(child)
+
+            next_population[p] = child
+
+        population = next_population
+
+    lengths = population_lengths(population)
+    final_best_idx = int(np.argmin(lengths))
+    if float(lengths[final_best_idx]) < best_length:
+        best_tour = population[final_best_idx].copy()
+        best_length = float(lengths[final_best_idx])
+
+    best_tour = two_opt(best_tour)
+    best_length = tour_length(best_tour)
+
+    return [int(city) for city in best_tour.tolist()], float(best_length)

@@ -1,0 +1,161 @@
+import math
+import numpy as np
+
+
+def solve(dist_matrix):
+    dist = np.asarray(dist_matrix, dtype=float)
+    n = int(dist.shape[0])
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        tour = [0, 1]
+        length = float(dist[0, 1] + dist[1, 0])
+        return tour, length
+
+    rng = np.random.default_rng(12345)
+
+    def tour_length(t):
+        t = np.asarray(t, dtype=int)
+        return float(dist[t, np.roll(t, -1)].sum())
+
+    def nearest_neighbor(start):
+        unvisited = np.ones(n, dtype=bool)
+        tour = np.empty(n, dtype=int)
+        current = int(start)
+
+        for k in range(n):
+            tour[k] = current
+            unvisited[current] = False
+            if k == n - 1:
+                break
+
+            candidates = np.flatnonzero(unvisited)
+            current = int(candidates[np.argmin(dist[current, candidates])])
+
+        return tour
+
+    def two_opt_delta(t, i, j):
+        a = t[i - 1]
+        b = t[i]
+        c = t[j]
+        d = t[(j + 1) % n]
+        return float(dist[a, c] + dist[b, d] - dist[a, b] - dist[c, d])
+
+    def sample_move():
+        while True:
+            i = int(rng.integers(0, n))
+            j = int(rng.integers(0, n - 1))
+            if j >= i:
+                j += 1
+            if i > j:
+                i, j = j, i
+
+            # Reversing the entire tour is equivalent to the same closed tour.
+            if not (i == 0 and j == n - 1):
+                return i, j
+
+    def two_opt_sweep(t, length, max_passes):
+        t = t.copy()
+        length = float(length)
+
+        for _ in range(max_passes):
+            improved = False
+
+            for i in range(n - 1):
+                j_stop = n - 1 if i == 0 else n
+
+                for j in range(i + 1, j_stop):
+                    delta = two_opt_delta(t, i, j)
+
+                    if delta < -1e-12:
+                        t[i:j + 1] = t[i:j + 1][::-1]
+                        length += delta
+                        improved = True
+                        break
+
+            if not improved:
+                break
+
+        return t, length
+
+    # Build a good initial tour using a few nearest-neighbor starts.
+    starts = [0, n // 2, n - 1]
+    if n <= 200:
+        extra_count = min(5, n)
+        starts.extend(int(x) for x in rng.choice(n, size=extra_count, replace=False))
+
+    seen = set()
+    starts = [s for s in starts if not (s in seen or seen.add(s))]
+
+    best_tour = None
+    best_length = float("inf")
+
+    for s in starts:
+        candidate = nearest_neighbor(s)
+        candidate_length = tour_length(candidate)
+
+        if candidate_length < best_length:
+            best_tour = candidate
+            best_length = candidate_length
+
+    current_tour = best_tour.copy()
+    current_length = best_length
+
+    # Light deterministic 2-opt polishing before annealing.
+    if n <= 300:
+        current_tour, current_length = two_opt_sweep(current_tour, current_length, max_passes=2)
+        best_tour = current_tour.copy()
+        best_length = current_length
+
+    # Estimate an initial temperature from random uphill 2-opt moves.
+    positive_deltas = []
+    sample_count = min(2000, max(100, 20 * n))
+
+    for _ in range(sample_count):
+        i, j = sample_move()
+        delta = two_opt_delta(current_tour, i, j)
+        if delta > 1e-12:
+            positive_deltas.append(delta)
+
+    if positive_deltas:
+        avg_uphill = float(np.mean(positive_deltas))
+        temperature = avg_uphill / -math.log(0.80)
+    else:
+        scale = current_length / max(n, 1)
+        if not math.isfinite(scale) or scale <= 0:
+            scale = float(np.mean(dist)) if dist.size else 1.0
+        temperature = max(scale, 1.0) * 0.01
+
+    temperature = max(float(temperature), 1e-12)
+    final_temperature = max(temperature * 1e-4, 1e-12)
+
+    # Geometric cooling: T_{k+1} = alpha * T_k.
+    iterations = int(max(10000, min(300000, 1500 * n)))
+    alpha = math.exp(math.log(final_temperature / temperature) / iterations)
+
+    for _ in range(iterations):
+        i, j = sample_move()
+        delta = two_opt_delta(current_tour, i, j)
+
+        if delta <= 0.0 or rng.random() < math.exp(-delta / temperature):
+            current_tour[i:j + 1] = current_tour[i:j + 1][::-1]
+            current_length += delta
+
+            if current_length < best_length:
+                best_length = current_length
+                best_tour = current_tour.copy()
+
+        temperature *= alpha
+
+    # Final 2-opt polishing of the best tour found.
+    if n <= 400:
+        best_tour, best_length = two_opt_sweep(best_tour, best_length, max_passes=5)
+    elif n <= 800:
+        best_tour, best_length = two_opt_sweep(best_tour, best_length, max_passes=1)
+
+    best_length = tour_length(best_tour)
+
+    return best_tour.tolist(), float(best_length)

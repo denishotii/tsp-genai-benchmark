@@ -1,0 +1,117 @@
+import numpy as np
+
+
+def _tour_lengths(population, dist_matrix):
+    """Compute closed-tour lengths for a population of permutations."""
+    return dist_matrix[population, np.roll(population, -1, axis=1)].sum(axis=1)
+
+
+def _tournament_select(population, fitness, rng, tournament_size=3):
+    """Select one parent by tournament selection."""
+    pop_size = len(population)
+    candidates = rng.choice(pop_size, size=tournament_size, replace=pop_size < tournament_size)
+    best = candidates[np.argmin(fitness[candidates])]
+    return population[best]
+
+
+def _order_crossover(parent1, parent2, rng):
+    """Order Crossover, OX, for permutation-encoded tours."""
+    n = len(parent1)
+
+    if n < 2:
+        return parent1.copy()
+
+    a, b = sorted(rng.choice(n, size=2, replace=False))
+
+    child = np.full(n, -1, dtype=np.int64)
+    child[a:b + 1] = parent1[a:b + 1]
+
+    used = np.zeros(n, dtype=bool)
+    used[parent1[a:b + 1]] = True
+
+    pos = (b + 1) % n
+    for gene in np.concatenate((parent2[b + 1:], parent2[:b + 1])):
+        if not used[gene]:
+            child[pos] = gene
+            used[gene] = True
+            pos = (pos + 1) % n
+
+    return child
+
+
+def _swap_mutation(tour, rng):
+    """Mutate a tour by swapping two cities."""
+    n = len(tour)
+    if n >= 2:
+        i, j = rng.choice(n, size=2, replace=False)
+        tour[i], tour[j] = tour[j], tour[i]
+
+
+def solve(dist_matrix):
+    """
+    Solve a symmetric TSP instance using a Genetic Algorithm.
+
+    Uses:
+      - permutation encoding
+      - tournament selection
+      - Order Crossover, OX
+      - swap mutation
+      - elitism
+    """
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+
+    if dist_matrix.ndim != 2 or dist_matrix.shape[0] != dist_matrix.shape[1]:
+        raise ValueError("dist_matrix must be a square NumPy array")
+
+    n = dist_matrix.shape[0]
+
+    if n == 0:
+        return [], 0.0
+
+    if n == 1:
+        return [0], 0.0
+
+    rng = np.random.default_rng()
+
+    pop_size = max(50, min(250, 8 * n))
+    generations = max(200, min(1200, 40 * n))
+
+    tournament_size = 3
+    crossover_rate = 0.9
+    mutation_rate = 0.2
+    elite_count = max(1, pop_size // 20)
+
+    population = np.empty((pop_size, n), dtype=np.int64)
+    for i in range(pop_size):
+        population[i] = rng.permutation(n)
+
+    fitness = _tour_lengths(population, dist_matrix)
+
+    for _ in range(generations):
+        elite_indices = np.argsort(fitness)[:elite_count]
+
+        new_population = np.empty_like(population)
+        new_population[:elite_count] = population[elite_indices]
+
+        for i in range(elite_count, pop_size):
+            parent1 = _tournament_select(population, fitness, rng, tournament_size)
+            parent2 = _tournament_select(population, fitness, rng, tournament_size)
+
+            if rng.random() < crossover_rate:
+                child = _order_crossover(parent1, parent2, rng)
+            else:
+                child = parent1.copy()
+
+            if rng.random() < mutation_rate:
+                _swap_mutation(child, rng)
+
+            new_population[i] = child
+
+        population = new_population
+        fitness = _tour_lengths(population, dist_matrix)
+
+    best_index = np.argmin(fitness)
+    tour = population[best_index].tolist()
+    length = float(fitness[best_index])
+
+    return tour, length

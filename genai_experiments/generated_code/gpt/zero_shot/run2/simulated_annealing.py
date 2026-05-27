@@ -1,0 +1,142 @@
+import math
+import numpy as np
+
+
+def solve(dist_matrix):
+    D = np.asarray(dist_matrix, dtype=float)
+    n = D.shape[0]
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        return [0, 1], float(2.0 * D[0, 1])
+
+    rng = np.random.default_rng(123456789)
+
+    def tour_length(t):
+        return float(D[t, np.roll(t, -1)].sum())
+
+    def two_opt_delta(t, i, j):
+        # Reverse t[i:j+1].
+        # Edges changed:
+        #   t[i-1] -> t[i]     and     t[j] -> t[j+1]
+        # become:
+        #   t[i-1] -> t[j]     and     t[i] -> t[j+1]
+        a = t[i - 1]
+        b = t[i]
+        c = t[j]
+        d = t[(j + 1) % n]
+        return float(D[a, c] + D[b, d] - D[a, b] - D[c, d])
+
+    def random_valid_move():
+        while True:
+            i = int(rng.integers(0, n - 1))
+            j = int(rng.integers(i + 1, n))
+            # Reversing the entire tour is the same closed tour; skip it.
+            if not (i == 0 and j == n - 1):
+                return i, j
+
+    def nearest_neighbor_initial_tour(start=0):
+        visited = np.zeros(n, dtype=bool)
+        t = np.empty(n, dtype=int)
+
+        current = start
+        for k in range(n):
+            t[k] = current
+            visited[current] = True
+
+            if k < n - 1:
+                row = D[current].copy()
+                row[visited] = np.inf
+                current = int(np.argmin(row))
+
+        return t
+
+    # Build a decent deterministic initial solution.
+    current = nearest_neighbor_initial_tour(0)
+    current_len = tour_length(current)
+
+    best = current.copy()
+    best_len = current_len
+
+    # Estimate an initial temperature from random positive 2-opt deltas.
+    positive_deltas = []
+    sample_count = min(2000, max(100, 10 * n))
+
+    for _ in range(sample_count):
+        i, j = random_valid_move()
+        delta = two_opt_delta(current, i, j)
+        if delta > 0:
+            positive_deltas.append(delta)
+
+    if positive_deltas:
+        mean_positive_delta = float(np.mean(positive_deltas))
+        initial_temp = -mean_positive_delta / math.log(0.8)
+    else:
+        avg_edge = current_len / n if current_len > 0 else 1.0
+        initial_temp = 0.1 * avg_edge
+
+    initial_temp = max(float(initial_temp), 1e-12)
+    final_temp = initial_temp * 1e-4
+
+    # Geometric cooling schedule.
+    max_iterations = int(min(300_000, max(10_000, 50 * n * n)))
+    cooling_rate = (final_temp / initial_temp) ** (1.0 / max_iterations)
+
+    temp = initial_temp
+
+    for _ in range(max_iterations):
+        i, j = random_valid_move()
+        delta = two_opt_delta(current, i, j)
+
+        if delta <= 0.0 or rng.random() < math.exp(-delta / temp):
+            current[i:j + 1] = current[i:j + 1][::-1]
+            current_len += delta
+
+            if current_len < best_len:
+                best_len = current_len
+                best = current.copy()
+
+        temp *= cooling_rate
+
+    # Final polishing with improving 2-opt moves.
+    current = best.copy()
+    current_len = best_len
+
+    eps = 1e-12
+
+    if n <= 1500:
+        if n <= 300:
+            max_passes = 20
+        else:
+            max_passes = 3
+
+        for _ in range(max_passes):
+            improved = False
+
+            for i in range(n - 1):
+                for j in range(i + 1, n):
+                    if i == 0 and j == n - 1:
+                        continue
+
+                    delta = two_opt_delta(current, i, j)
+                    if delta < -eps:
+                        current[i:j + 1] = current[i:j + 1][::-1]
+                        current_len += delta
+                        improved = True
+
+            if not improved:
+                break
+    else:
+        # For very large instances, avoid a full O(n^2) deterministic pass.
+        for _ in range(20 * n):
+            i, j = random_valid_move()
+            delta = two_opt_delta(current, i, j)
+            if delta < -eps:
+                current[i:j + 1] = current[i:j + 1][::-1]
+                current_len += delta
+
+    final_len = tour_length(current)
+    return current.tolist(), float(final_len)

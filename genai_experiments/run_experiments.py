@@ -171,8 +171,10 @@ def _generate_iterative(
     )
 
 
-def _save_artifacts(model_key: str, strategy: str, algorithm: str, gen: GenerationResult) -> None:
-    out_dir = GENERATED_CODE_DIR / model_key / STRATEGY_DIR[strategy]
+def _save_artifacts(
+    model_key: str, strategy: str, algorithm: str, run_idx: int, gen: GenerationResult
+) -> None:
+    out_dir = GENERATED_CODE_DIR / model_key / STRATEGY_DIR[strategy] / f"run{run_idx}"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"{algorithm}.prompt.txt").write_text(gen.prompt)
     (out_dir / f"{algorithm}.response.txt").write_text(gen.response)
@@ -186,6 +188,7 @@ def run(
     algorithms: list[str],
     timeout: float,
     max_rounds: int,
+    runs: int,
     dry_run: bool,
 ) -> pd.DataFrame:
     instances = {
@@ -195,39 +198,41 @@ def run(
     ref_matrix = instances[REFINEMENT_INSTANCE][1]
 
     rows = []
-    for model_key in models:
-        for strategy in strategies:
-            for algorithm in algorithms:
-                label = f"{model_key}/{strategy}/{algorithm}"
-                print(f"\n>>> generating {label}")
-                if strategy == "iterative_refinement":
-                    gen = _generate_iterative(
-                        model_key, algorithm, ref_matrix, timeout, max_rounds, dry_run
-                    )
-                else:
-                    gen = _generate_single(model_key, strategy, algorithm, dry_run)
-                _save_artifacts(model_key, strategy, algorithm, gen)
+    for run_idx in range(1, runs + 1):
+        for model_key in models:
+            for strategy in strategies:
+                for algorithm in algorithms:
+                    label = f"{model_key}/{strategy}/{algorithm} (run {run_idx}/{runs})"
+                    print(f"\n>>> generating {label}")
+                    if strategy == "iterative_refinement":
+                        gen = _generate_iterative(
+                            model_key, algorithm, ref_matrix, timeout, max_rounds, dry_run
+                        )
+                    else:
+                        gen = _generate_single(model_key, strategy, algorithm, dry_run)
+                    _save_artifacts(model_key, strategy, algorithm, run_idx, gen)
 
-                if gen.error is not None:
-                    print(f"    generation FAILED: {gen.error}")
-                if gen.code is None:
+                    if gen.error is not None:
+                        print(f"    generation FAILED: {gen.error}")
+                    if gen.code is None:
+                        for instance, optimum in TSPLIB_OPTIMA.items():
+                            rows.append(_row(model_key, strategy, algorithm, run_idx, instance,
+                                             instances[instance][0], optimum, gen, None))
+                        continue
+
                     for instance, optimum in TSPLIB_OPTIMA.items():
-                        rows.append(_row(model_key, strategy, algorithm, instance,
-                                         instances[instance][0], optimum, gen, None))
-                    continue
-
-                for instance, optimum in TSPLIB_OPTIMA.items():
-                    n, matrix = instances[instance]
-                    result = run_generated_solver(gen.code, matrix, timeout=timeout)
-                    rows.append(_row(model_key, strategy, algorithm, instance, n, optimum, gen, result))
-                    gap = (f"{(result.length - optimum) / optimum * 100:.2f}%"
-                           if result.length is not None else "-")
-                    print(f"    {instance:<10} {result.status:<13} gap={gap}")
+                        n, matrix = instances[instance]
+                        result = run_generated_solver(gen.code, matrix, timeout=timeout)
+                        rows.append(_row(model_key, strategy, algorithm, run_idx, instance,
+                                         n, optimum, gen, result))
+                        gap = (f"{(result.length - optimum) / optimum * 100:.2f}%"
+                               if result.length is not None else "-")
+                        print(f"    {instance:<10} {result.status:<13} gap={gap}")
 
     return pd.DataFrame(rows)
 
 
-def _row(model_key, strategy, algorithm, instance, cities, optimum, gen, result) -> dict:
+def _row(model_key, strategy, algorithm, run_idx, instance, cities, optimum, gen, result) -> dict:
     if result is None:
         status, length, gap, runtime, reported = "generation_failed", None, None, None, None
     else:
@@ -240,6 +245,7 @@ def _row(model_key, strategy, algorithm, instance, cities, optimum, gen, result)
         "model": model_key,
         "strategy": strategy,
         "algorithm": algorithm,
+        "run": run_idx,
         "instance": instance,
         "cities": cities,
         "status": status,
@@ -263,16 +269,27 @@ def main() -> None:
     parser.add_argument("--algorithms", nargs="+", choices=list(ALGORITHMS), default=list(ALGORITHMS))
     parser.add_argument("--timeout", type=float, default=60.0, help="per-run wall-clock limit (s)")
     parser.add_argument("--max-rounds", type=int, default=3, help="iterative-refinement rounds")
+    parser.add_argument("--runs", type=int, default=1,
+                        help="independent generations per cell (multi-seed; >1 estimates variance)")
     parser.add_argument("--dry-run", action="store_true", help="use a canned response; no API calls")
     args = parser.parse_args()
 
     df = run(args.models, args.strategies, args.algorithms,
-             args.timeout, args.max_rounds, args.dry_run)
+             args.timeout, args.max_rounds, args.runs, args.dry_run)
 
-    # Append to the log if it exists (so partial runs accumulate), else create.
+    # Merge into the existing log: rows for any (model, strategy, algorithm, run)
+    # cell we just regenerated replace their old versions, so partial runs and
+    # retries accumulate cleanly without duplicating cells. A pre-`run`-column
+    # log (older schema) can't be merged safely, so it is overwritten.
+    key = ["model", "strategy", "algorithm", "run"]
     if LOG_PATH.exists():
         existing = pd.read_csv(LOG_PATH)
-        df = pd.concat([existing, df], ignore_index=True)
+        if not existing.empty and "run" in existing.columns:
+            regenerated = set(zip(*(df[k] for k in key)))
+            keep = [cell not in regenerated for cell in zip(*(existing[k] for k in key))]
+            df = pd.concat([existing[keep], df], ignore_index=True)
+        elif not existing.empty:
+            print("Note: existing log uses an older schema (no 'run' column) — overwriting it.")
     df.to_csv(LOG_PATH, index=False)
 
     print(f"\nWrote {len(df)} total rows to {LOG_PATH.relative_to(PROJECT_ROOT)}")

@@ -1,0 +1,63 @@
+import numpy as np
+
+# Step-by-step reasoning:
+#
+# 1. Problem restatement and key algorithm components:
+#    We need to construct a closed TSP tour using the nearest-neighbor greedy
+#    heuristic. Starting from a fixed city, here city 0, we repeatedly move to
+#    the closest city that has not yet been visited. Once every city has been
+#    visited, we return from the last city back to the starting city.
+#
+# 2. Data structures and main loop:
+#    - `tour`: a list storing the visit order.
+#    - `unvisited`: a Boolean NumPy array where True means the city has not
+#      been visited yet.
+#    - `current`: the current city.
+#    - `length`: the accumulated closed-tour length.
+#    At each iteration, find all unvisited cities, choose the one with minimum
+#    distance from `current`, append it to the tour, update the length, and mark
+#    it visited.
+#
+# 3. Edge cases:
+#    - n == 0: return an empty tour and length 0.0.
+#    - n == 1: the tour is [0], and the closed-tour length is 0.0.
+#    - Ties: `np.argmin` returns the first minimum, and because candidate city
+#      indices are in increasing order, ties are broken by choosing the smallest
+#      city index.
+
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+
+    if dist_matrix.ndim != 2 or dist_matrix.shape[0] != dist_matrix.shape[1]:
+        raise ValueError("dist_matrix must be a square 2D array")
+
+    n = dist_matrix.shape[0]
+
+    if n == 0:
+        return [], 0.0
+
+    start = 0
+    current = start
+
+    tour = [start]
+    unvisited = np.ones(n, dtype=bool)
+    unvisited[start] = False
+
+    length = 0.0
+
+    while len(tour) < n:
+        candidates = np.nonzero(unvisited)[0]
+        distances = dist_matrix[current, candidates]
+
+        nearest_pos = np.argmin(distances)
+        next_city = int(candidates[nearest_pos])
+
+        length += float(dist_matrix[current, next_city])
+        tour.append(next_city)
+        unvisited[next_city] = False
+        current = next_city
+
+    length += float(dist_matrix[current, start])
+
+    return tour, float(length)

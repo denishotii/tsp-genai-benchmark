@@ -1,0 +1,44 @@
+# Reasoning
+
+1. **Problem**: Given an n×n symmetric distance matrix, build a TSP tour using the nearest-neighbor heuristic starting from city 0. At each step, go to the nearest unvisited city; after visiting all, return to start.
+
+2. **Data structures**: 
+   - A boolean `visited` array of size n.
+   - A `tour` list to record the order.
+   - Main loop: for n-1 iterations, mask visited cities' distances with infinity, pick argmin from current city's row.
+
+3. **Edge cases**:
+   - n=1: tour=[0], length=0.
+   - n=2: tour=[0,1], length = 2*d(0,1).
+   - Ties: `np.argmin` returns the smallest index, which is deterministic.
+
+```python
+import numpy as np
+
+def solve(dist_matrix):
+    dist = np.asarray(dist_matrix, dtype=float)
+    n = dist.shape[0]
+    
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    
+    visited = np.zeros(n, dtype=bool)
+    tour = [0]
+    visited[0] = True
+    current = 0
+    length = 0.0
+    
+    for _ in range(n - 1):
+        row = dist[current].copy()
+        row[visited] = np.inf
+        nxt = int(np.argmin(row))
+        length += float(dist[current, nxt])
+        tour.append(nxt)
+        visited[nxt] = True
+        current = nxt
+    
+    length += float(dist[current, tour[0]])
+    return tour, length
+```

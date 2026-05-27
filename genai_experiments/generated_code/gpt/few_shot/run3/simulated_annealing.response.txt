@@ -1,0 +1,188 @@
+```python
+import math
+import numpy as np
+
+
+def _tour_length(dist_matrix, tour):
+    """Return the closed-tour length."""
+    if len(tour) <= 1:
+        return 0.0
+    t = np.asarray(tour, dtype=int)
+    return float(dist_matrix[t, np.roll(t, -1)].sum())
+
+
+def _nearest_neighbor_tour(dist_matrix, start):
+    """Construct a greedy nearest-neighbor tour from a given start city."""
+    n = dist_matrix.shape[0]
+    unvisited = np.ones(n, dtype=bool)
+    tour = [int(start)]
+    unvisited[start] = False
+    current = int(start)
+
+    for _ in range(n - 1):
+        candidates = np.flatnonzero(unvisited)
+        nxt = int(candidates[np.argmin(dist_matrix[current, candidates])])
+        tour.append(nxt)
+        unvisited[nxt] = False
+        current = nxt
+
+    return tour
+
+
+def _initial_tour(dist_matrix):
+    """Try a few nearest-neighbor starts and keep the best."""
+    n = dist_matrix.shape[0]
+    if n == 0:
+        return []
+
+    starts = np.unique(np.linspace(0, n - 1, num=min(n, 8), dtype=int))
+
+    best_tour = None
+    best_length = float("inf")
+
+    for s in starts:
+        tour = _nearest_neighbor_tour(dist_matrix, int(s))
+        length = _tour_length(dist_matrix, tour)
+        if length < best_length:
+            best_tour = tour
+            best_length = length
+
+    return best_tour
+
+
+def _two_opt_delta(dist_matrix, tour, i, j):
+    """Change in length from reversing tour[i:j+1]."""
+    n = len(tour)
+
+    a = tour[i - 1]
+    b = tour[i]
+    c = tour[j]
+    d = tour[(j + 1) % n]
+
+    return float(
+        dist_matrix[a, c]
+        + dist_matrix[b, d]
+        - dist_matrix[a, b]
+        - dist_matrix[c, d]
+    )
+
+
+def _estimate_initial_temperature(dist_matrix, tour, rng):
+    """Estimate a starting temperature from sampled positive 2-opt deltas."""
+    n = len(tour)
+    if n < 3:
+        return 1.0
+
+    positive_distances = dist_matrix[dist_matrix > 0]
+    scale = float(np.mean(positive_distances)) if positive_distances.size else 1.0
+
+    samples = min(2000, max(100, 20 * n))
+    positive_deltas = []
+
+    for _ in range(samples):
+        i, j = sorted(rng.integers(0, n, size=2))
+        if i == j:
+            continue
+        if i == 0 and j == n - 1:
+            continue
+
+        delta = _two_opt_delta(dist_matrix, tour, i, j)
+        if delta > 0:
+            positive_deltas.append(delta)
+
+    if positive_deltas:
+        # Temperature giving roughly 80% acceptance for an average uphill move.
+        return max(-float(np.mean(positive_deltas)) / math.log(0.8), 0.01 * scale)
+
+    return max(scale, 1.0)
+
+
+def _two_opt_polish(dist_matrix, tour, length):
+    """Small deterministic 2-opt cleanup pass after annealing."""
+    n = len(tour)
+    if n < 4 or n > 300:
+        return tour, length
+
+    max_improvements = min(80, n)
+
+    for _ in range(max_improvements):
+        best_delta = 0.0
+        best_i = best_j = None
+
+        for i in range(n - 1):
+            for j in range(i + 1, n):
+                if i == 0 and j == n - 1:
+                    continue
+
+                delta = _two_opt_delta(dist_matrix, tour, i, j)
+
+                if delta < best_delta:
+                    best_delta = delta
+                    best_i, best_j = i, j
+
+        if best_i is None:
+            break
+
+        tour[best_i : best_j + 1] = tour[best_i : best_j + 1][::-1]
+        length += best_delta
+
+    return tour, length
+
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+
+    rng = np.random.default_rng(0)
+
+    current = _initial_tour(dist_matrix)
+    current_length = _tour_length(dist_matrix, current)
+
+    best = current[:]
+    best_length = current_length
+
+    if n < 3:
+        return best, float(best_length)
+
+    temperature = _estimate_initial_temperature(dist_matrix, current, rng)
+    final_temperature = max(temperature * 1e-4, 1e-12)
+
+    iterations = int(min(300000, max(20000, 1000 * n)))
+    alpha = (final_temperature / temperature) ** (1.0 / iterations)
+
+    for _ in range(iterations):
+        i, j = sorted(rng.integers(0, n, size=2))
+
+        if i == j:
+            temperature *= alpha
+            continue
+
+        # Reversing the entire closed tour is equivalent to the same tour.
+        if i == 0 and j == n - 1:
+            temperature *= alpha
+            continue
+
+        delta = _two_opt_delta(dist_matrix, current, i, j)
+
+        if delta <= 0.0 or rng.random() < math.exp(-delta / temperature):
+            current[i : j + 1] = current[i : j + 1][::-1]
+            current_length += delta
+
+            if current_length < best_length:
+                best = current[:]
+                best_length = current_length
+
+        temperature *= alpha
+
+    best, best_length = _two_opt_polish(dist_matrix, best, best_length)
+
+    # Recompute once to avoid tiny accumulated floating-point drift.
+    best_length = _tour_length(dist_matrix, best)
+
+    return best, float(best_length)
+```

@@ -1,0 +1,94 @@
+import numpy as np
+import random
+import math
+
+
+def tour_length(tour, dist_matrix):
+    """Compute total closed-tour length."""
+    return float(dist_matrix[tour, np.roll(tour, -1)].sum())
+
+
+def solve(dist_matrix):
+    """Solve TSP using Simulated Annealing with 2-opt neighborhood."""
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n <= 1:
+        return list(range(n)), 0.0
+    if n == 2:
+        return [0, 1], float(dist_matrix[0, 1] + dist_matrix[1, 0])
+
+    # Greedy nearest-neighbor initial tour
+    def nearest_neighbor_tour(start):
+        unvisited = set(range(n))
+        unvisited.remove(start)
+        tour = [start]
+        current = start
+        while unvisited:
+            nxt = min(unvisited, key=lambda j: dist_matrix[current, j])
+            tour.append(nxt)
+            unvisited.remove(nxt)
+            current = nxt
+        return tour
+
+    best_tour = nearest_neighbor_tour(0)
+    best_len = tour_length(best_tour, dist_matrix)
+
+    current = list(best_tour)
+    current_len = best_len
+
+    # SA parameters
+    # Estimate initial temperature from average edge length
+    avg_edge = float(dist_matrix[dist_matrix > 0].mean()) if np.any(dist_matrix > 0) else 1.0
+    T0 = avg_edge
+    T_min = 1e-6 * max(T0, 1e-9)
+
+    # Iteration budget scales with n
+    iterations = max(10000, 200 * n * n)
+    iterations = min(iterations, 300000)
+
+    alpha = (T_min / T0) ** (1.0 / iterations) if T0 > 0 else 0.999
+
+    T = T0
+    rng = random.Random(12345)
+
+    for _ in range(iterations):
+        # Pick two indices i < j for 2-opt: reverse tour[i:j+1]
+        i = rng.randint(0, n - 1)
+        j = rng.randint(0, n - 1)
+        if i == j:
+            T *= alpha
+            continue
+        if i > j:
+            i, j = j, i
+        # Avoid trivial reversal (whole tour) which is identical in closed cycle
+        if i == 0 and j == n - 1:
+            T *= alpha
+            continue
+
+        # Compute delta for 2-opt swap efficiently
+        a = current[i - 1] if i > 0 else current[-1]
+        b = current[i]
+        c = current[j]
+        d = current[(j + 1) % n]
+
+        # Handle adjacency (no change in edges effectively shouldn't happen here)
+        if a == c or b == d:
+            T *= alpha
+            continue
+
+        delta = (dist_matrix[a, c] + dist_matrix[b, d]
+                 - dist_matrix[a, b] - dist_matrix[c, d])
+
+        if delta < 0 or (T > 0 and rng.random() < math.exp(-delta / T)):
+            current[i:j + 1] = current[i:j + 1][::-1]
+            current_len += delta
+            if current_len < best_len:
+                best_len = current_len
+                best_tour = list(current)
+
+        T *= alpha
+
+    # Recompute length for numerical safety
+    best_len = tour_length(best_tour, dist_matrix)
+    return list(best_tour), float(best_len)

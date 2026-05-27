@@ -1,0 +1,89 @@
+import numpy as np
+import random
+
+
+def solve(dist_matrix):
+    dist = np.asarray(dist_matrix, dtype=float)
+    n = dist.shape[0]
+
+    if n <= 1:
+        return list(range(n)), 0.0
+    if n == 2:
+        return [0, 1], float(dist[0, 1] + dist[1, 0])
+
+    def tour_length(tour):
+        idx = np.asarray(tour)
+        return float(dist[idx, np.roll(idx, -1)].sum())
+
+    # GA parameters
+    pop_size = min(200, max(50, 10 * n))
+    generations = min(1000, max(200, 30 * n))
+    tournament_k = 5
+    mutation_rate = 0.2
+    elite_size = max(2, pop_size // 20)
+
+    # Initialize population with random permutations
+    population = []
+    base = list(range(n))
+    for _ in range(pop_size):
+        perm = base[:]
+        random.shuffle(perm)
+        population.append(perm)
+
+    fitness = [tour_length(t) for t in population]
+
+    def tournament_select():
+        best_idx = random.randrange(pop_size)
+        best_fit = fitness[best_idx]
+        for _ in range(tournament_k - 1):
+            i = random.randrange(pop_size)
+            if fitness[i] < best_fit:
+                best_idx = i
+                best_fit = fitness[i]
+        return population[best_idx]
+
+    def order_crossover(p1, p2):
+        a, b = sorted(random.sample(range(n), 2))
+        child = [-1] * n
+        child[a:b+1] = p1[a:b+1]
+        in_child = set(p1[a:b+1])
+        fill_pos = (b + 1) % n
+        for i in range(n):
+            gene = p2[(b + 1 + i) % n]
+            if gene not in in_child:
+                child[fill_pos] = gene
+                fill_pos = (fill_pos + 1) % n
+        return child
+
+    def swap_mutate(tour):
+        i, j = random.sample(range(n), 2)
+        tour[i], tour[j] = tour[j], tour[i]
+        return tour
+
+    best_tour = population[int(np.argmin(fitness))][:]
+    best_len = min(fitness)
+
+    for gen in range(generations):
+        # Sort by fitness
+        order = sorted(range(pop_size), key=lambda i: fitness[i])
+        new_population = [population[i][:] for i in order[:elite_size]]
+        new_fitness = [fitness[i] for i in order[:elite_size]]
+
+        while len(new_population) < pop_size:
+            p1 = tournament_select()
+            p2 = tournament_select()
+            child = order_crossover(p1, p2)
+            if random.random() < mutation_rate:
+                child = swap_mutate(child)
+            new_population.append(child)
+            new_fitness.append(tour_length(child))
+
+        population = new_population
+        fitness = new_fitness
+
+        cur_best = min(fitness)
+        if cur_best < best_len:
+            best_len = cur_best
+            best_tour = population[fitness.index(cur_best)][:]
+
+    return list(best_tour), float(best_len)

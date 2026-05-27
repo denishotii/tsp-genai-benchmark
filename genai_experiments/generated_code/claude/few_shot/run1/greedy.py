@@ -1,0 +1,28 @@
+import numpy as np
+
+def solve(dist_matrix):
+    """Nearest-neighbor greedy heuristic for TSP starting from city 0."""
+    dist_matrix = np.asarray(dist_matrix)
+    n = dist_matrix.shape[0]
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+
+    visited = np.zeros(n, dtype=bool)
+    tour = [0]
+    visited[0] = True
+    current = 0
+    length = 0.0
+
+    for _ in range(n - 1):
+        dists = dist_matrix[current].copy()
+        dists[visited] = np.inf
+        nxt = int(np.argmin(dists))
+        length += float(dist_matrix[current, nxt])
+        visited[nxt] = True
+        tour.append(nxt)
+        current = nxt
+
+    length += float(dist_matrix[current, tour[0]])
+    return tour, length

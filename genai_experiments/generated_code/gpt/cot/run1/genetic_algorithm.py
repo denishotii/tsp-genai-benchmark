@@ -1,0 +1,262 @@
+# Step-by-step reasoning:
+#
+# 1. Problem restatement and key GA components
+#    We need to solve a symmetric Traveling Salesman Problem from an n x n
+#    distance matrix. A candidate solution is a permutation of city indices:
+#    [c0, c1, ..., c(n-1)]. Its objective value is the closed-tour length:
+#    dist[c0,c1] + dist[c1,c2] + ... + dist[c(n-1),c0].
+#
+#    The Genetic Algorithm uses:
+#      - Permutation encoding: each individual is an ordering of all cities.
+#      - Tournament selection: choose a few random individuals and keep the best.
+#      - Order Crossover, OX: preserve a slice from one parent and fill the rest
+#        from the other parent in relative order.
+#      - Swap mutation: swap two cities in a permutation.
+#      - Elitism: copy the best individuals unchanged into the next generation.
+#
+# 2. Data structures and main loop
+#    - Population: a NumPy array of shape (pop_size, n), each row a permutation.
+#    - Fitness/objective: a NumPy array of tour lengths, lower is better.
+#    - Main loop:
+#        a. Evaluate population.
+#        b. Copy elites into the new population.
+#        c. Repeatedly select parents using tournament selection.
+#        d. Create children using OX crossover.
+#        e. Apply swap mutation.
+#        f. Replace old population with new population.
+#    - After the GA, a small 2-opt local improvement is applied to the best tour
+#      to clean up obvious crossings/improvements. The returned length is always
+#      recomputed from the final tour.
+#
+# 3. Edge cases
+#    - n == 0: return an empty tour and length 0.0.
+#    - n == 1: return [0] and length 0.0.
+#    - n == 2: return [0, 1] and the closed-tour length.
+#    - Ties in tournament selection or elitism are acceptable; any tied best
+#      individual may be selected.
+#    - The final tour is rotated to start at city 0 for consistency.
+
+import numpy as np
+
+
+def solve(dist_matrix):
+    dist_matrix = np.asarray(dist_matrix, dtype=float)
+    n = dist_matrix.shape[0]
+
+    if n == 0:
+        return [], 0.0
+    if n == 1:
+        return [0], 0.0
+    if n == 2:
+        tour = [0, 1]
+        return tour, float(dist_matrix[0, 1] + dist_matrix[1, 0])
+
+    rng = np.random.default_rng(12345)
+
+    # Adaptive GA parameters.
+    pop_size = int(min(300, max(60, 8 * n)))
+    generations = int(min(1200, max(250, 25 * n)))
+    tournament_size = 3
+    crossover_rate = 0.90
+    mutation_rate = 0.20
+    elite_count = max(1, int(0.05 * pop_size))
+
+    def tour_lengths(population):
+        """Vectorized closed-tour length evaluation."""
+        nxt = np.roll(population, -1, axis=1)
+        return dist_matrix[population, nxt].sum(axis=1)
+
+    def single_tour_length(tour):
+        tour_arr = np.asarray(tour, dtype=int)
+        return float(dist_matrix[tour_arr, np.roll(tour_arr, -1)].sum())
+
+    def nearest_neighbor_tour(start):
+        """Simple constructive heuristic used only to seed part of population."""
+        unvisited = np.ones(n, dtype=bool)
+        tour = np.empty(n, dtype=int)
+        current = start
+        for pos in range(n):
+            tour[pos] = current
+            unvisited[current] = False
+            if pos == n - 1:
+                break
+
+            candidates = np.where(unvisited)[0]
+            current = candidates[np.argmin(dist_matrix[current, candidates])]
+        return tour
+
+    def initialize_population():
+        population = np.empty((pop_size, n), dtype=int)
+
+        # Include the identity tour.
+        population[0] = np.arange(n)
+
+        # Include some nearest-neighbor tours from different starts.
+        insert_pos = 1
+        nn_count = min(n, max(1, pop_size // 10))
+        starts = rng.choice(n, size=nn_count, replace=False)
+        for s in starts:
+            if insert_pos >= pop_size:
+                break
+            population[insert_pos] = nearest_neighbor_tour(int(s))
+            insert_pos += 1
+
+        # Fill the rest randomly.
+        base = np.arange(n)
+        while insert_pos < pop_size:
+            population[insert_pos] = rng.permutation(base)
+            insert_pos += 1
+
+        return population
+
+    def tournament_select(population, lengths):
+        """Return one selected parent using tournament selection."""
+        candidates = rng.integers(0, pop_size, size=tournament_size)
+        best_local = candidates[np.argmin(lengths[candidates])]
+        return population[best_local]
+
+    def order_crossover(parent1, parent2):
+        """Order Crossover, OX, for permutation chromosomes."""
+        if n < 2:
+            return parent1.copy()
+
+        a, b = rng.choice(n, size=2, replace=False)
+        if a > b:
+            a, b = b, a
+
+        child = np.full(n, -1, dtype=int)
+        child[a:b + 1] = parent1[a:b + 1]
+
+        used = np.zeros(n, dtype=bool)
+        used[child[a:b + 1]] = True
+
+        fill_positions = list(range(b + 1, n)) + list(range(0, b + 1))
+        parent2_order = np.concatenate((parent2[b + 1:], parent2[:b + 1]))
+
+        fill_idx = 0
+        for gene in parent2_order:
+            if not used[gene]:
+                child[fill_positions[fill_idx]] = gene
+                used[gene] = True
+                fill_idx += 1
+                if fill_idx == len(fill_positions):
+                    break
+
+        return child
+
+    def mutate_swap(individual):
+        """Swap mutation."""
+        if rng.random() < mutation_rate:
+            i, j = rng.choice(n, size=2, replace=False)
+            individual[i], individual[j] = individual[j], individual[i]
+
+    def two_opt_limited(tour, max_passes=3):
+        """
+        Limited 2-opt local improvement for the final best tour.
+        This keeps runtime controlled while often improving the GA result.
+        """
+        tour = list(map(int, tour))
+        current_length = single_tour_length(tour)
+
+        for _ in range(max_passes):
+            improved = False
+
+            for i in range(n - 1):
+                a = tour[i]
+                b = tour[(i + 1) % n]
+
+                for k in range(i + 2, n):
+                    # Reversing the entire cycle is equivalent to the same tour.
+                    if i == 0 and k == n - 1:
+                        continue
+
+                    c = tour[k]
+                    d = tour[(k + 1) % n]
+
+                    delta = (
+                        dist_matrix[a, c]
+                        + dist_matrix[b, d]
+                        - dist_matrix[a, b]
+                        - dist_matrix[c, d]
+                    )
+
+                    if delta < -1e-12:
+                        tour[i + 1:k + 1] = reversed(tour[i + 1:k + 1])
+                        current_length += float(delta)
+                        improved = True
+
+            if not improved:
+                break
+
+        return tour
+
+    # Initialize.
+    population = initialize_population()
+    lengths = tour_lengths(population)
+
+    best_idx = int(np.argmin(lengths))
+    best_tour = population[best_idx].copy()
+    best_length = float(lengths[best_idx])
+
+    # GA main loop.
+    for _ in range(generations):
+        lengths = tour_lengths(population)
+
+        gen_best_idx = int(np.argmin(lengths))
+        if lengths[gen_best_idx] < best_length:
+            best_length = float(lengths[gen_best_idx])
+            best_tour = population[gen_best_idx].copy()
+
+        new_population = np.empty_like(population)
+
+        # Elitism.
+        elite_indices = np.argsort(lengths)[:elite_count]
+        new_population[:elite_count] = population[elite_indices]
+
+        # Generate offspring.
+        pos = elite_count
+        while pos < pop_size:
+            p1 = tournament_select(population, lengths)
+            p2 = tournament_select(population, lengths)
+
+            if rng.random() < crossover_rate:
+                child1 = order_crossover(p1, p2)
+                child2 = order_crossover(p2, p1)
+            else:
+                child1 = p1.copy()
+                child2 = p2.copy()
+
+            mutate_swap(child1)
+            new_population[pos] = child1
+            pos += 1
+
+            if pos < pop_size:
+                mutate_swap(child2)
+                new_population[pos] = child2
+                pos += 1
+
+        population = new_population
+
+    # Final evaluation.
+    lengths = tour_lengths(population)
+    final_best_idx = int(np.argmin(lengths))
+    if lengths[final_best_idx] < best_length:
+        best_tour = population[final_best_idx].copy()
+        best_length = float(lengths[final_best_idx])
+
+    # Limited local cleanup on the final best individual.
+    # Use fewer passes for larger instances to avoid excessive runtime.
+    if n <= 150:
+        improved_tour = two_opt_limited(best_tour, max_passes=5)
+    elif n <= 400:
+        improved_tour = two_opt_limited(best_tour, max_passes=2)
+    else:
+        improved_tour = list(map(int, best_tour))
+
+    # Rotate tour to start at city 0 for consistent output.
+    zero_pos = improved_tour.index(0)
+    improved_tour = improved_tour[zero_pos:] + improved_tour[:zero_pos]
+
+    final_length = single_tour_length(improved_tour)
+
+    return improved_tour, float(final_length)
