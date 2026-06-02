@@ -96,17 +96,25 @@ Flags: `--models`, `--strategies`, `--algorithms` (filter the matrix),
 
 ### Run the analysis (Phase 4)
 
+The analysis has two pieces — the notebook for interactive exploration and
+`make_figures.py` for the publication-quality figure set used in the paper.
+
 ```bash
-# Open interactively:
+# Interactive notebook (writes comparison_table.csv):
 jupyter notebook notebooks/analysis.ipynb
 
-# Or regenerate the figures + comparison table headlessly:
+# Or run it headlessly:
 jupyter nbconvert --to notebook --execute --inplace notebooks/analysis.ipynb
+
+# Generate the publication figures (used in the paper):
+python -m genai_experiments.make_figures
 ```
 
-Produces `results/comparison_table.csv` and the figures in `results/`
-(`fig_gap_by_algorithm_model.png`, `fig_strategy_heatmap.png`,
-`fig_llm_vs_reference.png`).
+The notebook produces `results/comparison_table.csv`. `make_figures.py`
+writes nine figures to `results/figures/` (gap by algorithm × model with
+error bars, strategy heatmap, gap by instance size, reliability, LLM vs.
+reference, strategy variance, plus the explanatory tour comparison,
+pipeline, and 2-opt diagrams).
 
 ---
 
