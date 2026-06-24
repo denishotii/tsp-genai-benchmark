@@ -30,6 +30,8 @@ TSPLIB_OPTIMA = {
     "berlin52": 7542,
     "ch130": 6110,
     "d198": 15780,
+    "pr439": 107217,
+    "pr1002": 259045,
 }
 
 # Reference solvers. Each takes a distance matrix and returns (tour, length).

@@ -39,7 +39,14 @@ DATA_DIR = PROJECT_ROOT / "data" / "tsplib"
 GENERATED_CODE_DIR = Path(__file__).resolve().parent / "generated_code"
 LOG_PATH = Path(__file__).resolve().parent / "experiment_log.csv"
 
-TSPLIB_OPTIMA = {"eil51": 426, "berlin52": 7542, "ch130": 6110, "d198": 15780}
+TSPLIB_OPTIMA = {
+    "eil51": 426,
+    "berlin52": 7542,
+    "ch130": 6110,
+    "d198": 15780,
+    "pr439": 107217,
+    "pr1002": 259045,
+}
 
 # Strategy name -> on-disk folder (CLAUDE.md §6 uses short folder names).
 STRATEGY_DIR = {
