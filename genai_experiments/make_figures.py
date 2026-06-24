@@ -23,7 +23,7 @@ FIG_DIR = ROOT / "results" / "figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 COLORS = {"gpt": "#4C72B0", "claude": "#DD8452"}
-INSTANCE_ORDER = ["eil51", "berlin52", "ch130", "d198"]
+INSTANCE_ORDER = ["eil51", "berlin52", "ch130", "d198", "pr439", "pr1002"]
 ALGO_LABELS = {
     "greedy": "Greedy",
     "simulated_annealing": "Sim. Annealing",
@@ -39,7 +39,11 @@ def _save(fig, name):
 
 
 def fig_quality_by_algorithm_model(df):
-    """Mean gap +/- std by algorithm, grouped by model (with error bars)."""
+    """Mean gap +/- std by algorithm, grouped by model (with error bars).
+
+    Error bars are asymmetric: clipped at 0 below the mean since gap-to-optimum
+    cannot be negative, but the full std is shown above the mean.
+    """
     algos = list(ALGO_LABELS)
     models = ["gpt", "claude"]
     x = np.arange(len(algos))
@@ -47,14 +51,17 @@ def fig_quality_by_algorithm_model(df):
     fig, ax = plt.subplots(figsize=(8, 5))
     for k, model in enumerate(models):
         sub = df[df.model == model]
-        means = [sub[sub.algorithm == a].gap_pct.mean() for a in algos]
-        stds = [sub[sub.algorithm == a].gap_pct.std() for a in algos]
-        ax.bar(x + (k - 0.5) * width, means, width, yerr=stds, capsize=4,
+        means = np.array([sub[sub.algorithm == a].gap_pct.mean() for a in algos])
+        stds = np.array([sub[sub.algorithm == a].gap_pct.std() for a in algos])
+        lower_err = np.minimum(stds, means)  # clip at 0
+        ax.bar(x + (k - 0.5) * width, means, width,
+               yerr=[lower_err, stds], capsize=4,
                label=model, color=COLORS[model])
     ax.set_xticks(x)
     ax.set_xticklabels([ALGO_LABELS[a] for a in algos])
-    ax.set_ylabel("gap-to-optimal (%)  (mean ± std over runs × instances)")
+    ax.set_ylabel("gap-to-optimal (%)  (mean, error bars = std clipped at 0)")
     ax.set_title("Solution quality by algorithm and model")
+    ax.set_ylim(bottom=0)
     ax.legend(title="model")
     _save(fig, "fig_quality_by_algorithm_model.png")
 
@@ -78,14 +85,21 @@ def fig_strategy_model_heatmap(df):
 def fig_gap_by_instance(df):
     """How gap scales with instance size, per model (greedy excluded -> deterministic)."""
     sub = df[df.algorithm != "greedy"]
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(9, 5))
     for model in ["gpt", "claude"]:
         means = [sub[(sub.model == model) & (sub.instance == inst)].gap_pct.mean()
                  for inst in INSTANCE_ORDER]
         ax.plot(INSTANCE_ORDER, means, "o-", label=model, color=COLORS[model], linewidth=2)
+    # Annotate each x-tick with the city count to make the size ladder explicit.
+    city_counts = {"eil51": 51, "berlin52": 52, "ch130": 130, "d198": 198,
+                   "pr439": 439, "pr1002": 1002}
+    labels = [f"{inst}\n(n={city_counts[inst]})" for inst in INSTANCE_ORDER]
+    ax.set_xticks(range(len(INSTANCE_ORDER)))
+    ax.set_xticklabels(labels)
     ax.set_ylabel("mean gap-to-optimal (%)")
     ax.set_xlabel("instance (increasing size →)")
     ax.set_title("Solution quality vs. instance size (SA + GA)")
+    ax.set_ylim(bottom=0)
     ax.legend(title="model")
     _save(fig, "fig_gap_by_instance.png")
 
@@ -119,9 +133,13 @@ def fig_llm_vs_reference(df, ref):
     fig, ax = plt.subplots(figsize=(8, 5))
     comp.plot(kind="bar", ax=ax, color=["#7f7f7f", "#4C72B0", "#55A868"])
     ax.set_ylabel("gap-to-optimal (%)")
-    ax.set_title("LLM-generated vs. hand-coded reference")
+    ax.set_title("LLM-generated vs. hand-coded reference (mean across 6 instances)")
     ax.set_xlabel("")
     plt.xticks(rotation=0)
+    # Annotate every bar with its value so 0 % / sub-1 % bars are not invisible.
+    for container in ax.containers:
+        ax.bar_label(container, fmt="%.1f%%", padding=2, fontsize=9)
+    ax.set_ylim(top=ax.get_ylim()[1] * 1.08)  # headroom for the labels
     _save(fig, "fig_llm_vs_reference.png")
 
 
@@ -133,14 +151,17 @@ def fig_strategy_variance(df):
     fig, ax = plt.subplots(figsize=(9, 5))
     for k, model in enumerate(["gpt", "claude"]):
         sub = df[df.model == model]
-        means = [sub[sub.strategy == s].gap_pct.mean() for s in strategies]
-        stds = [sub[sub.strategy == s].gap_pct.std() for s in strategies]
-        ax.bar(x + (k - 0.5) * width, means, width, yerr=stds, capsize=4,
+        means = np.array([sub[sub.strategy == s].gap_pct.mean() for s in strategies])
+        stds = np.array([sub[sub.strategy == s].gap_pct.std() for s in strategies])
+        lower_err = np.minimum(stds, means)  # gap cannot go below 0
+        ax.bar(x + (k - 0.5) * width, means, width,
+               yerr=[lower_err, stds], capsize=4,
                label=model, color=COLORS[model])
     ax.set_xticks(x)
     ax.set_xticklabels([s.replace("_", "\n") for s in strategies])
-    ax.set_ylabel("gap-to-optimal (%)  (mean ± std)")
+    ax.set_ylabel("gap-to-optimal (%)  (mean, error bars = std clipped at 0)")
     ax.set_title("Prompting strategy: quality and run-to-run variance")
+    ax.set_ylim(bottom=0)
     ax.legend(title="model")
     _save(fig, "fig_strategy_variance.png")
 
@@ -179,8 +200,8 @@ def fig_pipeline():
         "Prompt template\n(strategy × algorithm)",
         "LLM\n(GPT-5.5 / Claude Opus 4.7)",
         "Code extraction\n(parse fenced block)",
-        "Sandboxed executor\n(subprocess + 60 s timeout)",
-        "Benchmark on\n4 TSPLIB instances",
+        "Sandboxed executor\n(subprocess, 60–300 s timeout)",
+        "Benchmark on\n6 TSPLIB instances (51–1002 cities)",
         "experiment_log.csv\n(+ saved code & prompts)",
     ]
     fig, ax = plt.subplots(figsize=(6.5, 9))
