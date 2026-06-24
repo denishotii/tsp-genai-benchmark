@@ -53,10 +53,12 @@ delivers one — they reflexively improve it. But *how* they improve diverges:
 - Both recompute / verify the final tour length before returning (good
   practice — and the reason none of them could "lie" about length).
 - GPT's adaptive iteration budgets scale with `n`, which helps quality but is
-  double-edged: an over-budgeted GPT chain-of-thought GA was the **only**
-  reliability failure in the whole matrix — it timed out (>60 s) on the two
-  largest instances (ch130, d198) in one run while running fine elsewhere.
-  *Correct but non-scaling in runtime.*
+  double-edged: an over-budgeted GPT chain-of-thought GA accounts for **all 3
+  reliability failures in the 432-row matrix** — the *same generated solver*
+  (run 2) timed out on `ch130` (60 s), `d198` (60 s), *and* `pr1002` (300 s),
+  while runs 1 and 3 of the same cell completed every instance under 66 s.
+  *Correct algorithmically, but non-scaling in runtime — and the failure mode
+  is generation-specific rather than systematic.*
 
 ## 4. Reproducibility
 
@@ -77,6 +79,66 @@ delivers one — they reflexively improve it. But *how* they improve diverges:
 | Reproducibility | Seeds RNG | Often unseeded |
 | Net quality | Higher and more consistent | Decent but more variable |
 
+## 6. What the larger instances (pr439, pr1002) revealed about scaling
+
+The original ladder (51 → 198 cities) confirmed that LLM-generated code *runs*.
+The extended ladder (439 → 1002 cities) — added 2026-06-24 on supervisor
+feedback — confirmed something different: *that it scales unevenly*. The same
+artifacts were re-tested (no new generations); the only changes were the
+problem size and a per-instance wall-clock budget (300 s on the 439+ city
+instances vs. 60 s below).
+
+### Code-scaling differentiation (new at scale)
+
+- **Greedy stays trivial.** Same code, same gap, every cell — `pr439: 22.44 %`,
+  `pr1002: 27.82 %`, identical across all 12 LLM cells per instance. Confirms
+  the spec-prescribed deterministic nature of nearest-neighbor with single start.
+- **SA splits.** At ≤ 198 cities every LLM-generated SA is within a few percent
+  of the reference. At `pr1002` the *best* LLM SA (Claude CoT, **6.28 %**) beats
+  the reference SA (9.97 %), but the *mean* LLM SA at `pr1002` is 17–23 % —
+  worse than the reference. Scale exposes both directions of variance that
+  smaller instances hid.
+- **GA is the dramatic one.** Reference pure GA collapses to **915 % gap** at
+  `pr1002` (essentially a random tour). The best LLM GA at `pr1002` is **9.80 %**
+  (GPT iterative refinement). The mechanism is exactly the §1 finding —
+  memetic-style enhancements — but at 1000 cities the upgrade is the difference
+  between unusable and competitive. The "*useful but not faithful*" tension is
+  no longer subtle.
+
+### Runtime-scaling failure mode (new at scale)
+
+The lone failing solver from §3 (GPT CoT GA, run 2) has a runtime profile that
+documents exactly how generated code degrades:
+
+| Instance | Cities | Runtime | Status |
+|---|---|---|---|
+| eil51 | 51 | 28.4 s | ok |
+| berlin52 | 52 | 29.1 s | ok |
+| ch130 | 130 | 60.0 s | **timeout** |
+| d198 | 198 | 60.0 s | **timeout** |
+| pr439 | 439 | 262.1 s | ok *(just under the 300 s wall)* |
+| pr1002 | 1002 | 300.0 s | **timeout** |
+
+Same algorithm specification, same model, same prompt — but this *particular*
+generation produces code whose work grows non-linearly with `n`. Other runs of
+the *exact same cell* completed every instance under 66 s. **The failure is in
+the generation, not in the algorithm.** This is the single most concrete piece
+of evidence in the study that LLM code-quality variance is the load-bearing
+risk, not LLM code-correctness.
+
+### Variance quantified by scale
+
+Variance was hard to read at small scale: most cells hit single-digit gaps and
+small spreads. The extended ladder makes the variance visible. Claude few-shot
+GA, for example, has a standard deviation of **152 %** in gap across its 18
+instance-runs — best 0.72 % on `berlin52`, worst 600 %+ on `pr1002` — same
+prompt, same model, same strategy. The reproducibility-risk story moves from
+*plausible argument* (§1's "different LLMs add different enhancements") to
+*hard number* once the instance is large enough to expose the difference
+between adding 2-opt and not.
+
+---
+
 ## Link to the quantitative results
 
 The code reading *explains* the numbers rather than restating them:
@@ -85,10 +147,14 @@ The code reading *explains* the numbers rather than restating them:
   polishing that the spec didn't ask for.
 - Claude's higher-variance GA ⇐ it keeps the GA pure (only seeded), inheriting
   the pure-GA scaling weakness our own reference implementation showed.
-- The lone reliability failure ⇐ GPT's adaptive budgeting over-scaled on large
-  instances in one generation.
+- All 3 reliability failures ⇐ a single GPT CoT GA generation whose runtime
+  grows non-linearly with `n` — generation-specific, not systematic.
 - Identical greedy results across all cells ⇐ a deterministic algorithm with a
   faithful, single-start implementation from both models.
+- The dramatic 915 % → 9.8 % gap closure on `pr1002` ⇐ the LLM-added 2-opt
+  local search inside a memetic GA, which the spec did not request but which
+  is the only thing keeping the population-based metaheuristic competitive at
+  scale.
 
 **Overarching observation for the paper:** the more under-specified the
 algorithm (GA: "use a genetic algorithm"), the more the models substitute their
@@ -97,3 +163,5 @@ more precisely specified the task (greedy, SA neighborhood), the more faithfully
 they follow it. "Can LLMs implement these algorithms?" is therefore entangled
 with "will they implement *exactly* the algorithm asked, or a better one?" —
 and here, both models lean toward the latter whenever the spec leaves room.
+
+Scale doesn't change this conclusion; it sharpens it.

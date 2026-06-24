@@ -289,9 +289,17 @@ All papers are stored in `literature papers/REFERENCES.md`, which includes direc
 | berlin52 | 52     | 7542           |
 | ch130    | 130    | 6110           |
 | d198     | 198    | 15780          |
+| pr439    | 439    | 107217         |
+| pr1002   | 1002   | 259045         |
 
-Gap formula: `gap = (found - optimal) / optimal * 100`  
-Target for SA/GA reference implementations: **< 5% gap** on eil51/berlin52, **< 10%** on larger instances.
+`pr439` and `pr1002` were added 2026-06-24 after supervisor feedback that the
+51–198 ladder was too compressed to differentiate models at scale.
+
+Gap formula: `gap = (found - optimal) / optimal * 100`
+Target for SA/GA reference implementations: **< 5% gap** on eil51/berlin52,
+**< 10%** on ch130/d198, **< 15%** on pr439/pr1002 (larger instances need
+a longer wall-clock budget; the harness scales the timeout to 300 s for
+the 439+ city instances).
 
 ---
 

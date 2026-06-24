@@ -14,7 +14,8 @@ TSPLIB instances:
   **Claude Opus 4.7** across four prompting strategies, then run on the same
   instances.
 
-Benchmark instances (TSPLIB, `EUC_2D`): `eil51`, `berlin52`, `ch130`, `d198`.
+Benchmark instances (TSPLIB, `EUC_2D`): `eil51`, `berlin52`, `ch130`, `d198`,
+`pr439`, `pr1002` — a six-step size ladder from 51 to 1002 cities.
 
 Seminar project — Denis Hoti, KU Ingolstadt, SS 2026.
 Full spec: [CLAUDE.md](CLAUDE.md). Code-quality findings:
@@ -157,9 +158,9 @@ tsp-genai-benchmark/
 
 | Solver | Key choices | Typical gap-to-optimal |
 |---|---|---|
-| **Greedy** | nearest-neighbor, single start (city 0) | 15–24% |
-| **Simulated Annealing** | 2-opt neighborhood, geometric cooling (α=0.995), median-calibrated initial temperature, L=2n Markov chain, greedy warm start | 0–5.5% |
-| **Genetic Algorithm** | permutation encoding, Order Crossover, swap mutation, tournament selection (k=5), elitism; *pure* GA (no local search) | 11–90% |
+| **Greedy** | nearest-neighbor, single start (city 0) | 16–28% |
+| **Simulated Annealing** | 2-opt neighborhood, geometric cooling (α=0.995), median-calibrated initial temperature, L=2n Markov chain, greedy warm start | 0–10% (≤5.5% up to 198 cities; ~10% at 439–1002) |
+| **Genetic Algorithm** | permutation encoding, Order Crossover, swap mutation, tournament selection (k=5), elitism; *pure* GA (no local search) | 11–915% (collapses at scale — the design exposes what LLMs add) |
 
 Distances use the **TSPLIB `EUC_2D` convention** (`floor(sqrt(dx²+dy²) + 0.5)`,
 nearest-integer rounding), so gap-to-optimal is computed exactly against the
@@ -179,15 +180,21 @@ published optima.
 
 ## TSPLIB data provenance
 
-The four benchmark instances in `data/tsplib/` were downloaded on 2026-05-24
-from the **Rice University softlib mirror** of TSPLIB95:
+All six benchmark instances in `data/tsplib/` were downloaded from the
+**Rice University softlib mirror** of TSPLIB95:
 
 ```
 http://softlib.rice.edu/pub/tsplib/tsp/<name>.tsp.gz
 ```
 
+- `eil51`, `berlin52`, `ch130`, `d198` — downloaded 2026-05-24
+- `pr439`, `pr1002` — added 2026-06-24 to extend the size ladder
+  to ~1000 cities where pure-GA fully collapses and LLM-generated
+  code-scaling differences become visible
+
 The canonical TSPLIB95 distribution is hosted by Reinelt at Heidelberg
 (`comopt.ifi.uni-heidelberg.de/software/TSPLIB95/`), but that host was
-unreachable at download time. Rice's softlib is a long-established academic
-mirror of the same files; content was byte-verified against an independent
-mirror before commit. All four files use `EDGE_WEIGHT_TYPE: EUC_2D`.
+unreachable at the original download time. Rice's softlib is a long-established
+academic mirror of the same files. All files use `EDGE_WEIGHT_TYPE: EUC_2D`,
+and the published optima are: `eil51=426`, `berlin52=7542`, `ch130=6110`,
+`d198=15780`, `pr439=107217`, `pr1002=259045`.
