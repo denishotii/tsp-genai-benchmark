@@ -1,13 +1,16 @@
 """Thin wrappers over the OpenAI and Anthropic APIs for code generation.
 
-Each generation uses the provider's **default** configuration — no custom
-sampling or thinking settings — so the only experimental variable is the
+Each generation uses the provider's **default** configuration, with no custom
+sampling or thinking settings, so the only experimental variable is the
 prompt itself (the prompting strategy). API keys are loaded from a local
 ``.env`` file; see ``.env.example``.
 
 Note on reproducibility: LLM generation is inherently non-deterministic, so
-the harness logs every full response verbatim. The *generated code*, once
-produced, runs deterministically in the benchmark (it seeds its own RNG).
+the harness logs every full response verbatim. Whether the *generated code*
+itself runs deterministically depends on what the model chose to do. In this
+study, GPT-5.5 seeded its RNG in most (but not all) SA and GA solvers,
+while Claude Opus 4.7 never seeded its RNG, so re-evaluating a Claude solver
+on the same instance can give a slightly different tour each time.
 """
 
 import anthropic

@@ -1,4 +1,4 @@
-# CLAUDE.md — Project Context & Working Guide
+# CLAUDE.md - Project Context & Working Guide
 
 > This file gives Claude Code full context on what this project is, why it exists, what needs to be built, and how to build it. Read this before doing any work.
 
@@ -12,7 +12,7 @@
 - **Course:** Digital Seminar in Data Science & Quantitative Applications
 - **Paired with:** Pro-Seminar "Generative AI in Logistics" (SS 2026)
 - **Topic assignment:** P3 (Traveling Salesman Problem) + L2 (Metaheuristic Methods: SA + GA)
-- **Working solo** — no group partner
+- **Working solo** - no group partner
 
 ---
 
@@ -20,7 +20,7 @@
 
 A research project that answers one central question:
 
-> **Can Generative AI (LLMs) reliably implement complex combinatorial optimization algorithms — and which model does it better?**
+> **Can Generative AI (LLMs) reliably implement complex combinatorial optimization algorithms, and which model does it better?**
 
 The Traveling Salesman Problem (TSP) is used as the test bed. We implement TSP solvers two ways:
 
@@ -31,41 +31,43 @@ Then we benchmark both on the same standard instances and measure the gap.
 
 ---
 
-## 3. The Problem — TSP
+## 3. The Problem - TSP
 
 The **Traveling Salesman Problem** asks:
 > Given a set of cities and distances between them, find the shortest route that visits each city exactly once and returns to the start.
 
 - Formally: find the minimum-cost Hamiltonian cycle in a complete weighted graph
-- **NP-hard** — no polynomial-time exact solution known
-- With 20 cities: 2.4 quintillion (20!/2) possible tours — brute force is impossible
+- **NP-hard** - no polynomial-time exact solution known
+- With 20 cities: 2.4 quintillion (20!/2) possible tours, so brute force is impossible
 - Real-world applications: delivery routing, warehouse picking, service scheduling, PCB drilling
 
-**Benchmark instances** — from TSPLIB (Reinelt, 1991):
+**Benchmark instances** - from TSPLIB (Reinelt, 1991):
 | Instance | Cities | Known Optimal |
 |----------|--------|---------------|
 | eil51    | 51     | 426           |
 | berlin52 | 52     | 7542          |
 | ch130    | 130    | 6110          |
 | d198     | 198    | 15780         |
+| pr439    | 439    | 107217        |
+| pr1002   | 1002   | 259045        |
 
 All instances use **Euclidean 2D distances** (EUC_2D in TSPLIB format).
 
 ---
 
-## 4. Three Solution Methods (Track A — Reference Implementations)
+## 4. Three Solution Methods (Track A, Reference Implementations)
 
 These are implemented **by hand in Python**, following academic literature. They serve as the quality baseline.
 
 ### 4.1 Greedy Nearest-Neighbor (Baseline)
 - Constructive heuristic: always go to the nearest unvisited city
 - Fast, simple, produces a valid tour but suboptimal (~20–25% above optimal)
-- Purpose: lower bound on quality — any serious solver should beat this
+- Purpose: lower bound on quality. Any serious solver should beat this
 
 ### 4.2 Simulated Annealing (SA)
 - Based on: Kirkpatrick, Gelatt & Vecchi (1983)
 - **Neighborhood:** 2-opt (reverse a segment of the tour)
-- **Cooling schedule:** geometric — `T = T * alpha`, with `alpha ≈ 0.995`
+- **Cooling schedule:** geometric, `T = T * alpha`, with `alpha ≈ 0.995`
 - **Starting temperature:** calibrated so ~80% of moves accepted initially
 - **Stopping criterion:** temperature below threshold or no improvement for N iterations
 - Key parameters: `T_initial`, `T_final`, `alpha`, `max_iterations`
@@ -73,7 +75,7 @@ These are implemented **by hand in Python**, following academic literature. They
 ### 4.3 Genetic Algorithm (GA)
 - **Representation:** permutation encoding (list of city indices)
 - **Selection:** tournament selection (k=5)
-- **Crossover:** Order Crossover (OX) — preserves relative order of cities
+- **Crossover:** Order Crossover (OX), preserves relative order of cities
 - **Mutation:** swap mutation (swap two random cities in the tour)
 - **Population size:** ~100–200 individuals
 - **Generations:** ~500–1000
@@ -81,15 +83,15 @@ These are implemented **by hand in Python**, following academic literature. They
 
 ---
 
-## 5. GenAI Evaluation (Track B — LLM Experiments)
+## 5. GenAI Evaluation (Track B, LLM Experiments)
 
 ### 5.1 Models to Compare
-- **GPT-5.5** (OpenAI) — via API
-- **Claude Opus 4.7** (Anthropic, `claude-opus-4-7`) — via API
+- **GPT-5.5** (OpenAI), via API
+- **Claude Opus 4.7** (Anthropic, `claude-opus-4-7`), via API
 - Both models are asked to implement the exact same algorithms
 
 > **Note (2026-05):** The originally specced models (GPT-4o / GPT-4.1 and
-> Claude Sonnet 4.6) were superseded — GPT-4o/4.1 were retired from the
+> Claude Sonnet 4.6) were superseded. GPT-4o/4.1 were retired from the
 > OpenAI API around April 2026. We updated to a current **flagship-vs-
 > flagship** pairing (GPT-5.5 vs Claude Opus 4.7) for a fair, tier-matched
 > comparison. Record this substitution in the paper's methodology section.
@@ -99,7 +101,7 @@ For each algorithm × each model, we test all four strategies:
 
 | Strategy | Description |
 |----------|-------------|
-| **Zero-shot** | "Implement a Simulated Annealing solver for TSP in Python." — no examples |
+| **Zero-shot** | "Implement a Simulated Annealing solver for TSP in Python." No examples |
 | **Few-shot** | Provide 1–2 examples of related optimization code before the ask |
 | **Chain-of-thought (CoT)** | Ask the model to reason step-by-step before coding |
 | **Iterative refinement** | Start with zero-shot, then provide feedback/error messages and re-prompt |
@@ -108,9 +110,12 @@ For each algorithm × each model, we test all four strategies:
 Every experiment is a cell in this matrix:
 
 ```
-Prompting Strategy (4) × Model (2) × Algorithm (3) × TSPLIB Instance (4)
-= up to 96 data points
+Prompting Strategy (4) × Model (2) × Algorithm (3) × TSPLIB Instance (6) × Runs (3)
+= 432 data points
 ```
+
+(`pr439` and `pr1002` were added 2026-06-24 after supervisor feedback;
+see CLAUDE.md §11.)
 
 ### 5.4 What We Measure
 - **Correctness:** Does the code run without errors? Does it produce a valid tour?
@@ -138,7 +143,7 @@ tsp-genai-benchmark/
 ├── README.md                  # Public-facing project overview
 │
 ├── data/
-│   └── tsplib/                # TSPLIB .tsp files (eil51, berlin52, ch130, d198)
+│   └── tsplib/                # TSPLIB .tsp files (eil51, berlin52, ch130, d198, pr439, pr1002)
 │
 ├── src/
 │   ├── utils/
@@ -177,50 +182,48 @@ tsp-genai-benchmark/
 │
 ├── results/
 │   ├── benchmark_results.csv  # Reference implementation results
-│   ├── genai_results.csv      # LLM-generated code results
 │   └── comparison_table.csv   # Side-by-side gap-to-optimal comparison
 │
 ├── notebooks/
 │   └── analysis.ipynb         # Visualization and analysis of results
 │
-└── paper/                     # Academic paper (LaTeX or Word)
-    └── TSP_GenAI_Denis_Hoti.docx
+└── paper/                     # Academic paper files (local LaTeX/PDF) + code-quality notes
 ```
 
 ---
 
 ## 7. Implementation Priority & Order
 
-Work in this order — each step depends on the previous:
+Work in this order; each step depends on the previous:
 
-### Phase 1 — Foundation (late May)
-- [ ] Download TSPLIB instances: eil51.tsp, berlin52.tsp, ch130.tsp, d198.tsp
-- [ ] `src/utils/parser.py` — parse `.tsp` files into coordinate lists
-- [ ] `src/utils/distance.py` — compute Euclidean distance matrix
-- [ ] `src/utils/tour.py` — `tour_length(tour, dist_matrix)` and `is_valid_tour(tour, n)`
+### Phase 1 - Foundation (late May)
+- [ ] Download TSPLIB instances: eil51.tsp, berlin52.tsp, ch130.tsp, d198.tsp, pr439.tsp, pr1002.tsp
+- [ ] `src/utils/parser.py`: parse `.tsp` files into coordinate lists
+- [ ] `src/utils/distance.py`: compute Euclidean distance matrix
+- [ ] `src/utils/tour.py`: `tour_length(tour, dist_matrix)` and `is_valid_tour(tour, n)`
 - [ ] Write unit tests: verify eil51 has 51 nodes, distances are symmetric, etc.
 
-### Phase 2 — Reference Algorithms (May–early June)
-- [ ] `src/algorithms/greedy.py` — nearest-neighbor baseline
-- [ ] `src/algorithms/simulated_annealing.py` — SA with 2-opt + geometric cooling
-- [ ] `src/algorithms/genetic_algorithm.py` — GA with OX + tournament selection
-- [ ] `src/benchmark/run_benchmark.py` — run all 3 × 4 = 12 combinations, log results
+### Phase 2 - Reference Algorithms (May-early June)
+- [ ] `src/algorithms/greedy.py`: nearest-neighbor baseline
+- [ ] `src/algorithms/simulated_annealing.py`: SA with 2-opt + geometric cooling
+- [ ] `src/algorithms/genetic_algorithm.py`: GA with OX + tournament selection
+- [ ] `src/benchmark/run_benchmark.py`: run all 3 × 6 = 18 combinations, log results
 - [ ] Verify results are reasonable (within ~10–15% of known optimal for SA/GA)
 
-### Phase 3 — GenAI Experiments (mid June)
+### Phase 3 - GenAI Experiments (mid June)
 - [ ] Write prompt templates for all 4 strategies
 - [ ] Run zero-shot prompts on both GPT and Claude for all 3 algorithms
 - [ ] Run few-shot, CoT, iterative prompts
 - [ ] Save all generated code to `genai_experiments/generated_code/`
-- [ ] Benchmark every piece of generated code on all 4 TSPLIB instances
+- [ ] Benchmark every piece of generated code on all 6 TSPLIB instances
 - [ ] Fill `experiment_log.csv`
 
-### Phase 4 — Analysis (late June)
+### Phase 4 - Analysis (late June)
 - [ ] Build `results/comparison_table.csv`
-- [ ] `notebooks/analysis.ipynb` — plots and tables for the paper
+- [ ] `notebooks/analysis.ipynb`: plots and tables for the paper
 - [ ] Key figures needed: gap-to-optimal bar chart, prompting strategy comparison heatmap, model comparison table
 
-### Phase 5 — Paper (July)
+### Phase 5 - Paper (July)
 - [ ] Write 8-section paper (see §8)
 - [ ] Finalize visualizations
 - [ ] Prepare final presentation
@@ -229,14 +232,14 @@ Work in this order — each step depends on the previous:
 
 ## 8. Paper Structure (8 Sections)
 
-1. **Introduction** — motivation, research questions
-2. **TSP Formalization** — mathematical definition, complexity
-3. **Real-World Context** — last-mile delivery routing application
-4. **Solution Methods** — Greedy, SA, GA (theory + our implementation choices)
-5. **GenAI Experiment Design** — models, prompting strategies, methodology
-6. **Results & Benchmarks** — tables, charts, gap-to-optimal analysis
-7. **Critical Reflection** — where AI succeeded, where it failed, failure modes by strategy
-8. **Conclusion & Future Work**
+1. **Introduction:** motivation and research questions
+2. **TSP Formalization:** mathematical definition, complexity, and logistics context
+3. **Solution Methods:** Greedy, SA, GA, plus implementation choices
+4. **Experimental Design:** Track A reference solvers and Track B GenAI pipeline
+5. **Results:** reliability, gap-to-optimal results, and strategy/model effects
+6. **Discussion:** where AI succeeded, where it failed, and reproducibility risks
+7. **Conclusion:** wrap-up of the main findings
+8. **Appendix:** reproducibility commands and notes on historical experiment order
 
 ---
 
@@ -244,9 +247,9 @@ Work in this order — each step depends on the previous:
 
 - **Language:** Python 3.10+
 - **Style:** PEP 8, type hints where practical
-- **No external optimization libraries** (no OR-Tools, no scipy.optimize) — algorithms must be implemented from scratch
-- **Reproducibility:** set random seeds (`random.seed(42)`, `numpy.random.seed(42)`) everywhere
-- **Dependencies:** numpy, pandas, matplotlib — keep it minimal
+- **No external optimization libraries** (no OR-Tools, no scipy.optimize); algorithms must be implemented from scratch
+- **Reproducibility:** set random seeds in reference algorithms; generated LLM code is logged verbatim because it is not always deterministic
+- **Dependencies:** numpy, pandas, matplotlib; keep it minimal
 - **Every algorithm function must accept:** `dist_matrix` (2D numpy array) and return `(best_tour: list[int], best_length: float)`
 
 ---
@@ -255,33 +258,38 @@ Work in this order — each step depends on the previous:
 
 All papers are stored in `literature papers/REFERENCES.md`, which includes direct PDF download links, APA citations, and notes on which sections to read. Here is what each paper is for and how it connects to the code:
 
-### Reinelt (1991) — TSPLIB
-- **File:** `literature papers/Reinelt_1991_TSPLIB.pdf` *(download via KU library — see REFERENCES.md)*
+### Reinelt (1991) - TSPLIB
+- **File:** `literature papers/Reinelt_1991_TSPLIB.pdf` *(download via KU library; see REFERENCES.md)*
 - **Used for:** Understanding the `.tsp` file format parsed in `src/utils/parser.py`, and the known optimal tour lengths used in gap calculations throughout `src/benchmark/run_benchmark.py`
-- **Cite when:** Describing the benchmark instances (eil51, berlin52, ch130, d198) in the paper
+- **Cite when:** Describing the benchmark instances (eil51, berlin52, ch130, d198, pr439, pr1002) in the paper
 
-### Kirkpatrick, Gelatt & Vecchi (1983) — Simulated Annealing
+### Kirkpatrick, Gelatt & Vecchi (1983) - Simulated Annealing
 - **File:** `literature papers/Kirkpatrick_1983_SimulatedAnnealing.pdf` *(direct PDF in REFERENCES.md)*
-- **Used for:** The theoretical basis of `src/algorithms/simulated_annealing.py` — the Metropolis criterion (accept/reject logic), geometric cooling schedule, and the SA analogy to physical annealing
-- **Cite when:** Explaining the SA algorithm design choices — why we accept worse solutions with probability `exp(-delta/T)`, and why geometric cooling works
+- **Used for:** The theoretical basis of `src/algorithms/simulated_annealing.py`: the Metropolis criterion, geometric cooling schedule, and the SA analogy to physical annealing
+- **Cite when:** Explaining why SA accepts worse solutions with probability `exp(-delta/T)` and why geometric cooling works
 
-### Lin & Kernighan (1973) — 2-opt
+### Lin & Kernighan (1973) - 2-opt
 - **File:** `literature papers/Lin_Kernighan_1973_TSP_Heuristic.pdf` *(direct PDF in REFERENCES.md)*
-- **Used for:** The 2-opt neighborhood operator inside SA — reversing a segment of the tour to find a better solution. This is the move structure in `simulated_annealing.py`
+- **Used for:** The 2-opt neighborhood operator inside SA, reversing a segment of the tour to find a better solution. This is the move structure in `simulated_annealing.py`
 - **Cite when:** Explaining why 2-opt is used as the SA neighborhood operator
 
-### Larranaga et al. (1999) — GA for TSP
-- **File:** `literature papers/Larranaga_1999_GA_TSP_Review.pdf` *(free on ResearchGate — see REFERENCES.md)*
-- **Used for:** The GA implementation in `src/algorithms/genetic_algorithm.py` — specifically Order Crossover (OX), tournament selection, and swap mutation. Follow Section 3 (OX crossover) and Section 4 (mutation) when implementing
+### Larranaga et al. (1999) - GA for TSP
+- **File:** `literature papers/Larranaga_1999_GA_TSP_Review.pdf` *(free on ResearchGate; see REFERENCES.md)*
+- **Used for:** The GA implementation in `src/algorithms/genetic_algorithm.py`, specifically Order Crossover (OX), tournament selection, and swap mutation. Follow Section 3 (OX crossover) and Section 4 (mutation) when implementing
 - **Cite when:** Justifying the choice of OX crossover over other crossover operators for TSP
 
+### Ratliff & Rosenthal (1983) - Warehouse order picking
+- **File:** citation listed in `literature papers/REFERENCES.md`
+- **Used for:** The logistics application framing in the paper. Warehouse order picking is a concrete routing problem that can be formulated as a TSP.
+- **Cite when:** Explaining why the TSP is relevant beyond abstract benchmark instances
+
 ---
 
-> **For Claude Code:** When implementing any algorithm, open the corresponding paper alongside the code. The papers define the exact algorithm behavior — don't deviate without good reason. All implementation choices should be traceable back to one of these references.
+> **For Claude Code:** When implementing any algorithm, open the corresponding paper alongside the code. The papers define the exact algorithm behavior, so all implementation choices should be traceable back to one of these references.
 
 ---
 
-## 11. Quick Reference — Known Optimal Tours
+## 11. Quick Reference - Known Optimal Tours
 
 | Instance | Cities | Optimal Length |
 |----------|--------|----------------|
@@ -303,4 +311,4 @@ the 439+ city instances).
 
 ---
 
-*Last updated: May 2026 — Denis Hoti, KU Ingolstadt*
+*Last updated: June 2026 - Denis Hoti, KU Ingolstadt*

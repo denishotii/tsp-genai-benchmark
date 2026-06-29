@@ -3,7 +3,7 @@
 Loads every solver saved under ``genai_experiments/generated_code/`` from the
 original experiment matrix, runs each one on a configurable set of instances
 (default: pr439 and pr1002), and appends per-instance rows to
-``experiment_log.csv``. Nothing about the original generations is changed —
+``experiment_log.csv``. Nothing about the original generations is changed;
 this only extends the evaluation grid with new test instances.
 
 Useful when Stefan asks for a harder differentiation than the original
@@ -34,6 +34,12 @@ DATA_DIR = PROJECT_ROOT / "data" / "tsplib"
 
 # Folder name on disk -> canonical strategy name used in the log
 DIR_TO_STRATEGY = {v: k for k, v in STRATEGY_DIR.items()}
+GENERATION_METADATA = [
+    "refinement_rounds",
+    "input_tokens",
+    "output_tokens",
+    "generation_error",
+]
 
 
 def discover_solvers() -> list[dict]:
@@ -105,6 +111,30 @@ def evaluate(entries: list[dict], instances: list[str], timeout: float) -> pd.Da
     return pd.DataFrame(rows)
 
 
+def carry_forward_generation_metadata(new_rows: pd.DataFrame, existing: pd.DataFrame) -> pd.DataFrame:
+    """Copy per-generation metadata from the current log onto re-test rows.
+
+    Token counts and refinement rounds describe the generation event, not the
+    instance re-test. If the original log is present, keep that metadata so the
+    extended rows remain comparable to the original smaller-instance matrix.
+    """
+    key_cols = ["model", "strategy", "algorithm", "run"]
+    available = [c for c in GENERATION_METADATA if c in existing.columns]
+    if not available or not all(c in existing.columns for c in key_cols):
+        return new_rows
+
+    metadata = (
+        existing[key_cols + available]
+        .dropna(how="all", subset=available)
+        .drop_duplicates(subset=key_cols, keep="first")
+    )
+    if metadata.empty:
+        return new_rows
+
+    without_metadata = new_rows.drop(columns=available, errors="ignore")
+    return without_metadata.merge(metadata, on=key_cols, how="left")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Re-test saved LLM-generated solvers on additional TSPLIB instances."
@@ -130,6 +160,7 @@ def main() -> None:
     key_cols = ["model", "strategy", "algorithm", "run", "instance"]
     if LOG_PATH.exists():
         existing = pd.read_csv(LOG_PATH)
+        new_rows = carry_forward_generation_metadata(new_rows, existing)
         if not existing.empty and all(c in existing.columns for c in key_cols):
             new_keys = set(zip(*(new_rows[c] for c in key_cols)))
             keep = [k not in new_keys for k in zip(*(existing[c] for c in key_cols))]

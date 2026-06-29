@@ -1,21 +1,21 @@
-# Literature References — TSP + GenAI Benchmark
+# Literature References - TSP + GenAI Benchmark
 
 > Download each paper as a PDF and save it in this folder alongside this file.
 > Papers marked 🔓 are freely available via direct link. Papers marked 🔒 require library access.
 
 ---
 
-## 1. TSPLIB — Benchmark Instances
+## 1. TSPLIB - Benchmark Instances
 
 **Reinelt, G. (1991)**
-*TSPLIB — A Traveling Salesman Problem Library*
+*TSPLIB - A Traveling Salesman Problem Library*
 ORSA Journal on Computing, Vol. 3, No. 4, pp. 376–384.
 DOI: [10.1287/ijoc.3.4.376](https://doi.org/10.1287/ijoc.3.4.376)
 
-🔒 **Access:** Behind INFORMS paywall — use your KU Ingolstadt library portal.
+🔒 **Access:** Behind INFORMS paywall; use your KU Ingolstadt library portal.
 Search for: `TSPLIB A Traveling Salesman Problem Library Reinelt 1991`
 
-**Why read it:** Describes the four benchmark instances used in this project (eil51, berlin52, ch130, d198), the `.tsp` file format, and how optimal tour lengths were established.
+**Why read it:** Describes TSPLIB benchmark instances, the `.tsp` file format, and how optimal tour lengths were established. This project uses six EUC_2D instances: eil51, berlin52, ch130, d198, pr439, and pr1002.
 
 **Key sections:** Instance description format, EUC_2D distance specification, known optimal values.
 
@@ -62,7 +62,22 @@ Free PDF widely available on ResearchGate and university repositories.
 
 **Why read it:** Comprehensive review of GA representations for TSP, including a clear description of Order Crossover (OX), which is the crossover operator used in this project. Also covers tournament selection and mutation operators.
 
-**Key sections:** Section 3 (crossover operators — focus on OX), Section 4 (mutation operators — focus on swap mutation).
+**Key sections:** Section 3 (crossover operators, especially OX), Section 4 (mutation operators, especially swap mutation).
+
+---
+
+## 5. Warehouse Order Picking / Real-World TSP Application
+
+**Ratliff, H. D., & Rosenthal, A. S. (1983)**
+*Order-Picking in a Rectangular Warehouse: A Solvable Case of the Traveling Salesman Problem*
+Operations Research, Vol. 31, No. 3, pp. 507-521.
+
+🔒 **Access:** Usually available through university library databases.
+Search for: `Ratliff Rosenthal 1983 order picking traveling salesman problem`
+
+**Why read it:** Gives a concrete logistics example where an operational routing task, order picking in a warehouse, is formulated as a Traveling Salesman Problem. This is useful for grounding the paper's TSP benchmark in a real logistics application.
+
+**Key sections:** Problem formulation and warehouse routing discussion.
 
 ---
 
@@ -74,13 +89,14 @@ Free PDF widely available on ResearchGate and university repositories.
 | 2 | Kirkpatrick et al. | 1983 | Simulated Annealing | 🔓 Direct PDF |
 | 3 | Lin & Kernighan | 1973 | 2-opt moves / TSP heuristics | 🔓 Direct PDF |
 | 4 | Larranaga et al. | 1999 | GA for TSP, OX crossover | 🔓 ResearchGate |
+| 5 | Ratliff & Rosenthal | 1983 | Warehouse order picking as TSP | 🔒 Library |
 
 ---
 
 ## How to Cite (APA 7th)
 
 ```
-Reinelt, G. (1991). TSPLIB—A traveling salesman problem library.
+Reinelt, G. (1991). TSPLIB: A traveling salesman problem library.
   ORSA Journal on Computing, 3(4), 376–384.
 
 Kirkpatrick, S., Gelatt, C. D., Jr., & Vecchi, M. P. (1983).
@@ -93,6 +109,10 @@ Larranaga, P., Kuijpers, C. M. H., Murga, R. H., Inza, I., &
   Dizdarevic, S. (1999). Genetic algorithms for the travelling salesman
   problem: A review of representations and operators.
   Artificial Intelligence Review, 13, 129–170.
+
+Ratliff, H. D., & Rosenthal, A. S. (1983). Order-picking in a
+  rectangular warehouse: A solvable case of the traveling salesman problem.
+  Operations Research, 31(3), 507–521.
 ```
 
 ---

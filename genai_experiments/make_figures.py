@@ -128,7 +128,10 @@ def fig_llm_vs_reference(df, ref):
     comp = pd.DataFrame({
         "reference": [ref_gap[a] for a in algos],
         "LLM mean": [df[df.algorithm == a].gap_pct.mean() for a in algos],
-        "LLM best": [df[df.algorithm == a].gap_pct.min() for a in algos],
+        "LLM best/instance": [
+            df[df.algorithm == a].groupby("instance").gap_pct.min().mean()
+            for a in algos
+        ],
     }, index=[ALGO_LABELS[a] for a in algos])
     fig, ax = plt.subplots(figsize=(8, 5))
     comp.plot(kind="bar", ax=ax, color=["#7f7f7f", "#4C72B0", "#55A868"])
@@ -169,7 +172,7 @@ def fig_strategy_variance(df):
 # ----------------------------- explanatory figures -----------------------------
 
 def fig_tour_comparison():
-    """Greedy vs. SA reference tours on eil51 — makes the gap visual."""
+    """Greedy vs. SA reference tours on eil51; makes the gap visual."""
     coords = parse_tsp(ROOT / "data" / "tsplib" / "eil51.tsp")
     pts = np.array(coords)
     D = distance_matrix(coords)
